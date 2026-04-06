@@ -1,0 +1,298 @@
+# 轴承故障诊断项目 - Windsurf 开发规则
+# 项目名称：基于多通道条件生成与自适应注意力融合的轴承故障诊断研究
+
+## 1. 项目结构规范
+
+### 1.1 目录用途说明
+- `01_env/`: 虚拟环境目录，存放Python解释器和依赖包
+- `02_data/`: 数据集目录，按处理阶段分类存储
+  - `raw/`: 原始数据集（CWRU公开数据集 + 企业工业数据集）
+  - `preprocessed/`: 预处理后的数据（去趋势 + 滤波 + 裁剪）
+  - `cwt/`: CWT时频图数据（多通道张量格式）
+  - `augmented/`: cDWGAN-GP增强后的数据
+- `03_code/`: 核心代码目录，按功能模块组织
+  - `01_utils/`: 通用工具函数，供所有模块复用
+  - `02_models/`: 模型定义文件，按模型类型分类
+  - `03_train/`: 训练脚本，对应不同模型
+  - `04_test/`: 测试评估脚本
+- `04_models_ckpt/`: 训练好的模型权重文件
+- `05_logs/`: 训练日志和错误日志
+- `06_results/`: 实验结果，包含图表和报告
+
+### 1.2 文件命名约定
+- 模型文件：`{model_name}.py` (如：`cnn_baseline.py`, `swin_ca.py`)
+- 数据文件：`{dataset}_{type}_{version}.csv/mat` (如：`cwru_raw_v1.mat`)
+- 配置文件：`config_{module}.yaml` (如：`config_cwt.yaml`)
+- 日志文件：`{model}_{timestamp}.log` (如：`train_cnn_20240307.log`)
+- 结果文件：`{experiment}_{metric}_{timestamp}.csv/png` (如：`accuracy_test_20240307.csv`)
+
+## 2. 代码风格规范
+
+### 2.1 基础编码规范
+- 使用Python 3.9+语法特性
+- 变量命名：snake_case（小写字母+下划线）
+- 函数命名：snake_case，动词开头描述功能
+- 类命名：PascalCase（首字母大写的驼峰命名）
+- 常量命名：UPPER_CASE（全大写字母+下划线）
+- 私有变量/方法：前缀单下划线 `_private_method`
+
+### 2.2 类型注解要求
+- 所有函数必须包含参数和返回值的类型注解
+- 使用 `typing` 模块中的类型：`List`, `Tuple`, `Dict`, `Optional`, `Union`
+- 复杂数据结构使用 `TypeAlias` 定义类型别名
+
+```python
+from typing import List, Tuple, Dict, Optional
+import torch
+import numpy as np
+
+# 类型别名定义
+SignalData = np.ndarray
+CWTData = torch.Tensor
+ModelConfig = Dict[str, Any]
+
+def process_signal(signal: SignalData, sample_rate: int) -> Tuple[SignalData, Dict[str, float]]:
+    """处理振动信号的函数示例"""
+    pass
+```
+
+### 2.3 文档字符串规范
+- 所有类和函数必须包含详细的docstring
+- 使用Google风格的docstring格式
+- 中文注释为主，关键术语可用英文
+
+```python
+def cwt_transform(signal: np.ndarray, scales: np.ndarray, wavelet: str = 'morl') -> np.ndarray:
+    """
+    对振动信号进行连续小波变换
+    
+    Args:
+        signal (np.ndarray): 输入的一维振动信号，形状为 (L,)
+        scales (np.ndarray): CWT尺度参数序列，控制分析的频率范围
+        wavelet (str): 小波基函数类型，默认为'morl'(Morlet小波)
+    
+    Returns:
+        np.ndarray: CWT系数矩阵，形状为 (len(scales), len(signal))
+                   包含时频域的复数系数
+    
+    Raises:
+        ValueError: 当输入信号为空或尺度参数无效时抛出
+        
+    Example:
+        >>> signal = np.random.randn(2048)
+        >>> scales = np.arange(1, 65)
+        >>> cwt_coeffs = cwt_transform(signal, scales)
+        >>> print(cwt_coeffs.shape)  # (64, 2048)
+    """
+    pass
+```
+
+## 3. 技术实现规范
+
+### 3.1 PyTorch框架使用
+- 优先使用 `torch.nn` 模块构建网络层
+- 使用 `torch.optim` 进行优化器配置
+- 模型参数初始化使用 `torch.nn.init`
+- 设备管理：`device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')`
+
+### 3.2 CWT参数配置
+- 基函数：Morlet小波 (w0=5)
+- 尺度序列：根据信号长度和采样频率自适应生成
+- 输出格式：幅度谱（复数系数的绝对值）
+- 多通道处理：每个传感器独立进行CWT变换
+
+```python
+# CWT参数配置示例
+CWT_CONFIG = {
+    'wavelet': 'morl',      # 小波基函数
+    'scales': 'auto',       # 自动生成尺度序列
+    'sampling_rate': 12000, # 采样频率(Hz)
+    'freq_range': (1, 1000), # 分析频率范围
+    'output_format': 'magnitude' # 输出幅度谱
+}
+```
+
+### 3.3 cDWGAN-GP模型规范
+- 生成器：4层转置卷积，输入噪声维度100
+- 判别器：3层卷积 + 全局平均池化
+- 损失函数：Wasserstein距离 + 梯度惩罚(λ=10)
+- 条件变量：One-Hot编码的故障类别标签
+
+```python
+# cDWGAN-GP超参数配置
+CDWGAN_CONFIG = {
+    'latent_dim': 100,      # 噪声向量维度
+    'num_classes': 4,       # 故障类别数
+    'gradient_penalty': 10, # 梯度惩罚系数
+    'batch_size': 32,       # 批次大小
+    'lr_g': 0.0002,         # 生成器学习率
+    'lr_d': 0.0002,         # 判别器学习率
+}
+```
+
+### 3.4 Swin-Transformer + CA模型规范
+- 基础架构：Swin-T (Tiny版本)
+- 输入尺寸：(N, H, W) = (3, 64, 2048) 多通道时频图
+- Patch大小：4×4
+- CA模块：嵌入在Stage4输出端
+- 分类器：全连接层(1024→4) + Softmax
+
+```python
+# Swin-T + CA配置
+SWIN_CA_CONFIG = {
+    'patch_size': 4,         # Patch大小
+    'embed_dim': 96,         # 嵌入维度
+    'depths': [2, 2, 6, 2],  # 每个阶段的深度
+    'num_heads': [3, 6, 12, 24], # 多头注意力头数
+    'num_classes': 4,         # 分类类别数
+    'ca_reduction': 32,       # CA降维系数
+}
+```
+
+## 4. 数据处理规范
+
+### 4.1 数据预处理流程
+1. **去趋势处理**：消除基线漂移
+2. **滤波处理**：Butterworth低通滤波器，截止频率1kHz
+3. **信号裁剪**：每个样本长度2048点
+4. **标准化**：Z-score标准化
+
+### 4.2 数据增强策略
+- 使用cDWGAN-GP生成合成样本
+- 保持原始数据与生成数据的比例平衡
+- 生成样本必须通过质量检验
+
+### 4.3 数据集划分
+- 训练集：70%
+- 验证集：15% 
+- 测试集：15%
+- 分层采样确保类别平衡
+
+## 5. 实验管理规范
+
+### 5.1 实验记录
+- 每次实验必须记录：时间戳、超参数、模型版本、数据集版本
+- 日志文件包含：训练损失、验证指标、错误信息
+- 使用结构化日志格式（JSON）
+
+### 5.2 结果保存
+- 模型权重：保存为`.pth`格式，包含训练轮次信息
+- 指标结果：保存为CSV格式，便于后续分析
+- 可视化图表：保存为高分辨率PNG格式
+- 实验报告：Markdown格式，包含完整的实验描述
+
+### 5.3 版本控制
+- 重要实验结果必须打标签
+- 配置文件版本化管理
+- 代码提交前必须通过测试
+
+## 6. 代码质量要求
+
+### 6.1 注释规范
+我是Python编程小白，需要每一步代码都有通俗易懂的详细注释：
+
+```python
+# 导入必要的库
+import numpy as np  # 数值计算库，用于处理振动信号
+import torch  # PyTorch深度学习框架
+from typing import List, Tuple  # 类型注解支持
+
+def load_vibration_data(file_path: str) -> Tuple[np.ndarray, int]:
+    """
+    加载振动数据文件
+    
+    Args:
+        file_path (str): 数据文件的完整路径
+        
+    Returns:
+        Tuple[np.ndarray, int]: 返回振动信号数组和采样频率
+                              - 第一个元素是振动信号数据(一维数组)
+                              - 第二个元素是采样频率(每秒采样点数)
+    """
+    # 使用numpy加载数据文件，假设是.mat格式
+    try:
+        data = scipy.io.loadmat(file_path)  # 加载mat文件
+        signal = data['signal']  # 提取名为'signal'的变量
+        fs = data['sampling_rate'][0, 0]  # 提取采样频率，[0,0]确保得到标量值
+        
+        print(f"成功加载数据文件: {file_path}")  # 打印加载成功信息
+        print(f"信号长度: {len(signal)} 点")  # 打印信号长度
+        print(f"采样频率: {fs} Hz")  # 打印采样频率
+        
+        return signal, int(fs)  # 返回信号和采样频率，确保采样频率为整数
+        
+    except Exception as e:
+        # 如果加载过程中出现任何错误，打印错误信息并返回空值
+        print(f"加载数据文件失败: {e}")
+        return None, None
+```
+
+### 6.2 错误处理
+- 所有可能失败的函数都必须包含异常处理
+- 使用具体的异常类型，避免裸露的`except:`
+- 错误信息要包含足够的上下文信息
+
+### 6.3 性能优化
+- 使用向量化操作替代循环
+- 合理使用GPU加速（大批次数据）
+- 内存管理：及时释放不需要的张量
+
+## 7. 禁止项和注意事项
+
+### 7.1 严格禁止
+- ❌ 禁止使用全局变量存储状态
+- ❌ 禁止硬编码文件路径（使用相对路径或配置文件）
+- ❌ 禁止在代码中直接写入密码或敏感信息
+- ❌ 禁止提交包含调试信息的代码
+
+### 7.2 GAN训练注意事项
+- ⚠️ 训练过程中监控梯度范数，防止梯度爆炸
+- ⚠️ 定期保存检查点，防止训练中断
+- ⚠️ 使用标签平滑提高训练稳定性
+- ⚠️ 生成样本质量检验：时域和频域特征对比
+
+### 7.3 数据安全
+- 📁 原始数据不允许修改
+- 🔐 工业数据集需要脱敏处理
+- 📊 实验结果需要备份保存
+
+## 8. 项目特定规则
+
+### 8.1 轴承故障诊断特定要求
+- 故障类别：正常(N)、内圈故障(IR)、外圈故障(OR)、滚动体故障(Ball)
+- 传感器配置：至少3个振动传感器
+- 信号长度：2048点/样本
+- 采样频率：12kHz
+
+### 8.2 评价指标计算
+- 准确率(Accuracy)：整体分类正确率
+- F1分数：每个类别的F1分数和宏平均
+- 混淆矩阵：详细的分类结果分析
+- 召回率：每个故障类别的召回率
+
+### 8.3 实验环境要求
+- Python 3.9+
+- PyTorch 2.0+ with CUDA 12.4
+- 内存：至少16GB RAM
+- GPU：NVIDIA GPU with 8GB+ VRAM
+
+## 9. 开发工作流
+
+### 9.1 新功能开发流程
+1. 在`03_code`对应目录创建新文件
+2. 编写单元测试
+3. 更新相关配置文件
+4. 运行完整测试套件
+5. 更新文档
+
+### 9.2 代码审查清单
+- [ ] 所有函数都有类型注解
+- [ ] 所有函数都有详细docstring
+- [ ] 代码注释充分且易懂
+- [ ] 异常处理完善
+- [ ] 性能考虑合理
+- [ ] 符合项目命名规范
+
+---
+
+**注意**: 本规则文件会根据项目进展持续更新，请定期检查最新版本。如有疑问或建议，请及时反馈。

@@ -1,0 +1,83 @@
+# 模型文件
+*.pt
+*.pth
+*.h5
+*.ckpt
+04_models_ckpt/*.pth
+04_models_ckpt/*.pt
+
+# 数据目录 - 完整排除
+02_data/
+*.csv
+*.npy
+*.npz
+*.mat
+*.zip
+*.rar
+*.pkl
+*.json
+
+# 虚拟环境
+01_env/
+venv/
+env/
+.venv/
+
+# 日志文件
+05_logs/
+*.log
+
+# 结果文件（保留源码，排除大文件）
+06_results/*.png
+06_results/*.jpg
+06_results/*.jpeg
+06_results/*.pdf
+06_results/figures/*.png
+06_results/figures/*.jpg
+06_results/figures/*.pdf
+
+# 缓存文件
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# 测试覆盖率
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# 文档构建
+docs/_build/
+
+# 分包工具
+build/
+dist/
+*.egg-info/
