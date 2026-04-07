@@ -4,16 +4,41 @@ CWRU轴承数据集读取与批量处理工具模块
 功能：提供CWRU数据集的读取、预处理和批量处理功能
 """
 
-import os  # 操作系统接口，用于文件路径处理
-import numpy as np  # 数值计算库，用于数组操作
-from scipy.io import loadmat  # MATLAB文件加载库，用于读取.mat文件
-from scipy import signal as signal_module  # 信号处理库，用于滤波等操作
-from scipy.fft import fft, fftfreq  # FFT变换，用于频域分析
-from typing import List, Tuple, Optional, Union  # 类型注解支持
-import glob  # 文件路径匹配库，用于批量文件查找
-import matplotlib.pyplot as plt  # 绘图库，用于可视化
-from sklearn.model_selection import train_test_split  # 数据集划分工具
-import pandas as pd  # 数据处理库，用于生成统计表格
+import os
+import glob
+import numpy as np
+import pandas as pd
+from scipy.io import loadmat
+from scipy.signal import butter, filtfilt, detrend
+from scipy.fft import fft, fftfreq
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+from typing import List, Tuple, Optional
+
+# 智能获取项目根目录
+def get_project_root():
+    """智能获取项目根目录"""
+    current_file = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file)
+    
+    # 向上查找项目根目录（包含02_data和03_code的目录）
+    search_dir = current_dir
+    while search_dir != os.path.dirname(search_dir):
+        parent = os.path.dirname(search_dir)
+        if (os.path.exists(os.path.join(parent, "02_data")) and 
+            os.path.exists(os.path.join(parent, "03_code"))):
+            return parent
+        search_dir = parent
+    
+    # 如果没找到，返回当前目录的父目录
+    return os.path.dirname(current_dir)
+
+# 获取项目根目录和数据根目录
+PROJECT_ROOT = get_project_root()
+DATA_ROOT = os.path.join(PROJECT_ROOT, "02_data")
+
+print(f"检测到的项目根目录: {PROJECT_ROOT}")
+print(f"数据根目录: {DATA_ROOT}")
 
 
 def parse_fault_type_from_path(file_path: str) -> int:
@@ -227,7 +252,7 @@ def test_cwru_reading():
     
     # 测试1: 读取单个正常数据文件
     print("测试1: 读取单个正常数据文件")
-    normal_file = "./02_data/raw/cwru/Normal Baseline Data/97_0.mat"
+    normal_file = os.path.join(DATA_ROOT, "raw", "cwru", "Normal Baseline Data", "97_0.mat")
     
     if os.path.exists(normal_file):
         signal, label = read_cwru_mat(normal_file)
@@ -247,7 +272,7 @@ def test_cwru_reading():
     
     # 测试2: 批量读取所有数据文件
     print("测试2: 批量读取所有CWRU数据文件")
-    raw_dir = "./02_data/raw/cwru/"
+    raw_dir = os.path.join(DATA_ROOT, "raw", "cwru")
     
     if os.path.exists(raw_dir):
         signals, labels, files = batch_read_cwru(raw_dir)
@@ -313,10 +338,10 @@ def preprocess_signal(signal: np.ndarray, fs: int = 48000) -> np.ndarray:
     normalized_cutoff = cutoff_freq / nyquist_freq  # 归一化截止频率
     
     # 设计Butterworth滤波器
-    b, a = signal_module.butter(N=4, Wn=normalized_cutoff, btype='low', analog=False)
+    b, a = butter(N=4, Wn=normalized_cutoff, btype='low', analog=False)
     
     # 应用滤波器，zero-phase滤波避免相位失真
-    filtered_signal = signal_module.filtfilt(b, a, detrended_signal)
+    filtered_signal = filtfilt(b, a, detrended_signal)
     print(f"步骤2 - Butterworth低通滤波完成，截止频率: {cutoff_freq}Hz")
     
     # 步骤3: 裁剪/补零到2048维 - 统一信号长度
@@ -555,7 +580,7 @@ def test_preprocessing():
     print("测试1: 单个信号预处理")
     
     # 读取一个测试文件
-    test_file = "./02_data/raw/cwru/Normal Baseline Data/97_0.mat"
+    test_file = os.path.join(DATA_ROOT, "raw", "cwru", "Normal Baseline Data", "97_0.mat")
     if os.path.exists(test_file):
         original_signal, label = read_cwru_mat(test_file)
         if original_signal is not None:
@@ -577,8 +602,8 @@ def test_preprocessing():
     
     # 测试2: 批量预处理
     print("测试2: 批量预处理CWRU数据")
-    raw_dir = "./02_data/raw/cwru/"
-    out_dir = "./02_data/preprocessed/cwru/"
+    raw_dir = os.path.join(DATA_ROOT, "raw", "cwru")
+    out_dir = os.path.join(DATA_ROOT, "preprocessed", "cwru")
     
     if os.path.exists(raw_dir):
         processed_files, processed_labels = batch_preprocess_cwru(raw_dir, out_dir)
@@ -898,8 +923,8 @@ def test_dataset_split():
     # 测试1: 数据集划分
     print("测试1: 数据集划分功能")
     
-    preprocessed_dir = "./02_data/preprocessed/cwru/"
-    out_dir = "./02_data/preprocessed/split/"
+    preprocessed_dir = os.path.join(DATA_ROOT, "preprocessed", "cwru")
+    out_dir = os.path.join(DATA_ROOT, "preprocessed", "split")
     
     if os.path.exists(preprocessed_dir):
         try:

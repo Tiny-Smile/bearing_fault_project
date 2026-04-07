@@ -4,19 +4,44 @@ Morlet小波CWT变换工具模块
 功能：提供Morlet小波连续小波变换，生成时频图用于深度学习
 """
 
-import os  # 操作系统接口，用于文件路径处理
-import numpy as np  # 数值计算库，用于数组操作
-import matplotlib.pyplot as plt  # 绘图库，用于可视化
-from typing import List, Tuple, Optional, Union  # 类型注解支持
-import glob  # 文件路径匹配库，用于批量文件查找
-from scipy.io import loadmat  # MATLAB文件加载库
-from scipy import signal as signal_module  # 信号处理库
-from scipy.fft import fft, fftfreq  # FFT变换
-from sklearn.model_selection import train_test_split  # 数据集划分
-import pandas as pd  # 数据处理库
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy import signal
+from scipy.io import loadmat
+from typing import List, Tuple, Optional, Union
+import glob
+from scipy.fft import fft, fftfreq
+from sklearn.model_selection import train_test_split
+import pandas as pd
+
+# 智能获取项目根目录
+def get_project_root():
+    """智能获取项目根目录"""
+    current_file = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file)
+    
+    # 向上查找项目根目录（包含02_data和03_code的目录）
+    search_dir = current_dir
+    while search_dir != os.path.dirname(search_dir):
+        parent = os.path.dirname(search_dir)
+        if (os.path.exists(os.path.join(parent, "02_data")) and 
+            os.path.exists(os.path.join(parent, "03_code"))):
+            return parent
+        search_dir = parent
+    
+    # 如果没找到，返回当前目录的父目录
+    return os.path.dirname(current_dir)
+
+# 获取项目根目录和数据根目录
+PROJECT_ROOT = get_project_root()
+DATA_ROOT = os.path.join(PROJECT_ROOT, "02_data")
+
+print(f"CWT - 检测到的项目根目录: {PROJECT_ROOT}")
+print(f"CWT - 数据根目录: {DATA_ROOT}")
 
 
-def cwt_morlet_transform(signal: np.ndarray, 
+def cwt_morlet_transform(signal_data: np.ndarray, 
                         scales: Optional[np.ndarray] = None,
                         omega0: float = 5.0) -> np.ndarray:
     """
@@ -25,7 +50,7 @@ def cwt_morlet_transform(signal: np.ndarray,
     生成64×2048的时频幅度谱图，用于深度学习模型输入
     
     Args:
-        signal (np.ndarray): 输入的一维信号，形状为 (2048,)
+        signal_data (np.ndarray): 输入的一维信号，形状为 (2048,)
         scales (Optional[np.ndarray]): 尺度序列，默认64个对数尺度
         omega0 (float): Morlet小波的中心频率参数，默认5.0
         
@@ -33,13 +58,13 @@ def cwt_morlet_transform(signal: np.ndarray,
         np.ndarray: CWT系数幅度谱，形状为 (64, 2048)
         
     Example:
-        >>> signal = np.random.randn(2048)
-        >>> cwt_coeffs = cwt_morlet_transform(signal)
+        >>> signal_data = np.random.randn(2048)
+        >>> cwt_coeffs = cwt_morlet_transform(signal_data)
         >>> print(cwt_coeffs.shape)
         (64, 2048)
     """
-    if len(signal) != 2048:
-        raise ValueError(f"输入信号长度必须为2048，当前长度: {len(signal)}")
+    if len(signal_data) != 2048:
+        raise ValueError(f"输入信号长度必须为2048，当前长度: {len(signal_data)}")
     
     # 生成尺度序列
     if scales is None:
@@ -49,7 +74,7 @@ def cwt_morlet_transform(signal: np.ndarray,
         max_scale = 128
         scales = np.logspace(np.log10(min_scale), np.log10(max_scale), 64)
     
-    print(f"开始CWT变换，信号长度: {len(signal)}, 尺度数量: {len(scales)}")
+    print(f"开始CWT变换，信号长度: {len(signal_data)}, 尺度数量: {len(scales)}")
     
     # 定义Morlet小波函数
     def morlet_wavelet(x, omega0=5.0):
@@ -75,11 +100,11 @@ def cwt_morlet_transform(signal: np.ndarray,
         wavelet = wavelet / np.sqrt(scale)
         
         # 卷积计算CWT系数
-        if len(wavelet) <= len(signal):
-            cwt_coeff = signal_module.convolve(signal, wavelet, mode='same')
+        if len(wavelet) <= len(signal_data):
+            cwt_coeff = signal.convolve(signal_data, wavelet, mode='same')
         else:
             # 如果小波比信号长，进行信号卷积
-            cwt_coeff = signal_module.convolve(signal, wavelet, mode='same')
+            cwt_coeff = signal.convolve(signal_data, wavelet, mode='same')
         
         cwt_coeffs.append(cwt_coeff)
         
@@ -464,8 +489,8 @@ def test_cwt_transform():
     # 测试3: 批量CWT处理
     print("测试3: 批量CWT处理")
     
-    split_dir = "./02_data/preprocessed/split/"
-    cwt_dir = "./02_data/cwt/"
+    split_dir = os.path.join(DATA_ROOT, "preprocessed", "split")
+    cwt_dir = os.path.join(DATA_ROOT, "cwt")
     
     if os.path.exists(split_dir):
         try:
