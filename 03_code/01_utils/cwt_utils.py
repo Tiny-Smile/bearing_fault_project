@@ -238,7 +238,8 @@ def batch_cwt_cwru(split_dir: str, out_dir: str, n_channels: int = 3) -> dict:
     
     # 确保输出目录存在
     os.makedirs(out_dir, exist_ok=True)
-    os.makedirs("./06_results/figures/", exist_ok=True)
+    figures_dir = os.path.join(PROJECT_ROOT, "06_results", "figures")
+    os.makedirs(figures_dir, exist_ok=True)
     
     # 查找NPZ文件
     npz_files = glob.glob(os.path.join(split_dir, "*.npz"))
@@ -323,7 +324,7 @@ def batch_cwt_cwru(split_dir: str, out_dir: str, n_channels: int = 3) -> dict:
 
 def visualize_cwt_comparison(split_dir: str, 
                            cwt_dir: str,
-                           save_path: str = "./06_results/figures/cwt_compare.png"):
+                           save_path: str = None):
     """
     可视化正常和故障信号的CWT时频图对比
     
@@ -332,6 +333,8 @@ def visualize_cwt_comparison(split_dir: str,
         cwt_dir (str): CWT数据集目录
         save_path (str): 图片保存路径
     """
+    if save_path is None:
+        save_path = os.path.join(PROJECT_ROOT, "06_results", "figures", "cwt_compare.png")
     print(f"生成CWT时频图对比，保存到: {save_path}")
     
     # 确保输出目录存在
