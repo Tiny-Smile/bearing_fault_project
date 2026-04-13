@@ -6,161 +6,217 @@ alwaysApply: false
 
 # 实验管理规范
 
-## 1. 实验记录
+## 1. 实验记录（每次实验都要记）
 
-每次实验必须记录以下信息：
+### 记什么？
+
+| 内容 | 例子 |
+|------|------|
+| 什么时间 | 2026-04-13 16:00 |
+| 用什么模型 | swin_ca_v1 |
+| 数据集版本 | cwru_preprocessed_v2 |
+| 关键参数 | batch_size=32, lr=0.001 |
+| 随机种子 | 42（保证可复现） |
+
+### 代码示例
 
 ```python
-experiment_config = {
-    'timestamp': '2026-04-13_16-00-00',
-    'model_version': 'swin_ca_v1',
-    'dataset_version': 'cwru_preprocessed_v2',
-    'hyperparameters': {
-        'batch_size': 32,
-        'learning_rate': 0.001,
-        'epochs': 100,
-    },
-    'random_seed': 42,
-}
+def 打印实验信息():
+    """打印当前实验的配置信息"""
+    print("=" * 50)
+    print("实验配置")
+    print("=" * 50)
+    print(f"模型: Swin-Transformer + CA")
+    print(f"数据集: CWRU 预处理数据 v2")
+    print(f"批次大小: 32")
+    print(f"学习率: 0.001")
+    print(f"训练轮次: 100")
+    print(f"随机种子: 42")
+    print("=" * 50)
 ```
 
-## 2. 日志规范
+## 2. 日志记录（训练过程要记下来）
 
-### 2.1 日志格式
-
-使用结构化日志（JSON格式），便于后续分析：
+### 简单的日志写法
 
 ```python
-import json
-import logging
+import os
 from datetime import datetime
 
-class ExperimentLogger:
-    """实验日志记录器"""
+def 创建日志文件(实验名: str) -> str:
+    """创建日志文件，返回文件路径"""
+    # 创建日志文件夹
+    log_dir = os.path.join(PROJECT_ROOT, "05_logs")
+    os.makedirs(log_dir, exist_ok=True)
     
-    def __init__(self, log_dir: str, experiment_name: str):
-        self.log_dir = Path(log_dir)
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.log_file = self.log_dir / f"{experiment_name}_{timestamp}.jsonl"
+    # 文件名加上时间戳，避免重复
+    时间 = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = os.path.join(log_dir, f"{实验名}_{时间}.log")
     
-    def log(self, metric: str, value: float, step: int = None):
-        """记录单个指标"""
-        entry = {
-            'timestamp': datetime.now().isoformat(),
-            'metric': metric,
-            'value': value,
-            'step': step,
-        }
-        with open(self.log_file, 'a') as f:
-            f.write(json.dumps(entry) + '\n')
-    
-    def log_dict(self, data: dict):
-        """批量记录指标"""
-        with open(self.log_file, 'a') as f:
-            f.write(json.dumps(data) + '\n')
+    return log_file
+
+def 写日志(日志文件: str, 内容: str):
+    """写入日志内容"""
+    with open(日志文件, 'a', encoding='utf-8') as f:
+        时间 = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        f.write(f"[{时间}] {内容}\n")
+
+# 用法
+log_file = 创建日志文件("训练")
+写日志(log_file, "开始训练...")
+写日志(log_file, "Epoch 1/100, Loss: 0.25")
 ```
 
-### 2.2 必须记录的指标
-
-| 类别 | 指标 |
-|------|------|
-| 训练 | loss, learning_rate, gradient_norm |
-| 验证 | accuracy, f1_score, confusion_matrix |
-| 性能 | training_time, memory_usage |
-
-## 3. 结果保存
-
-### 3.1 文件格式
-
-| 类型 | 格式 | 说明 |
-|------|------|------|
-| 模型权重 | `.pth` | 包含epoch信息 |
-| 指标结果 | `.csv` | 便于后续分析 |
-| 可视化 | `.png` (300 DPI) | 高分辨率图表 |
-| 实验报告 | `.md` | 在 `06_results/report/` 目录下 |
-
-### 3.2 目录结构
-
-```
-06_results/
-├── figures/           # 可视化图表
-│   ├── cwt_compare.png
-│   └── confusion_matrix.png
-├── metrics/          # 评估指标
-│   ├── accuracy.csv
-│   └── f1_scores.csv
-└── report/           # 实验报告
-    └── experiment_20240307.md
-```
-
-### 3.3 模型保存
+### 训练时记录的指标
 
 ```python
-def save_checkpoint(
-    model,
-    optimizer,
-    epoch: int,
-    metrics: dict,
-    save_dir: Path
-):
-    """保存训练检查点"""
-    checkpoint = {
+# 每个 epoch 结束后记录这些
+写日志(log_file, f"Epoch {i}:")
+写日志(log_file, f"  训练损失 = {train_loss:.4f}")
+写日志(log_file, f"  验证准确率 = {val_acc:.4f}")
+写日志(log_file, f"  学习率 = {lr:.6f}")
+```
+
+## 3. 保存结果
+
+### 保存位置
+
+```
+项目根目录/
+└── 06_results/           # 所有结果放这里
+    ├── figures/          # 图片（png格式，300清晰度）
+    ├── metrics/          # 指标数据（csv格式）
+    └── report/            # 实验报告（md格式）
+```
+
+### 保存图片
+
+```python
+import matplotlib.pyplot as plt
+
+def 保存图片(图片, 文件名: str):
+    """保存图片到正确位置"""
+    # 保存到 06_results/figures/
+    save_dir = os.path.join(PROJECT_ROOT, "06_results", "figures")
+    os.makedirs(save_dir, exist_ok=True)
+    
+    save_path = os.path.join(save_dir, 文件名)
+    
+    # dpi=300 表示高清，bbox_inches='tight' 裁掉白边
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()  # 关掉图片释放内存
+    
+    print(f"图片已保存: {save_path}")
+```
+
+### 保存指标数据
+
+```python
+import csv
+
+def 保存评估结果(结果字典: dict, 文件名: str):
+    """保存评估结果到 CSV 文件"""
+    save_dir = os.path.join(PROJECT_ROOT, "06_results", "metrics")
+    os.makedirs(save_dir, exist_ok=True)
+    
+    save_path = os.path.join(save_dir, 文件名)
+    
+    with open(save_path, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['指标', '值'])  # 写表头
+        for 指标名, 指标值 in 结果字典.items():
+            writer.writerow([指标名, 指标值])
+    
+    print(f"结果已保存: {save_path}")
+```
+
+## 4. 保存模型
+
+### 保存整个模型
+
+```python
+import torch
+
+def 保存模型(模型, 文件名: str, epoch: int):
+    """保存训练好的模型"""
+    save_dir = os.path.join(PROJECT_ROOT, "04_models_ckpt")
+    os.makedirs(save_dir, exist_ok=True)
+    
+    save_path = os.path.join(save_dir, 文件名)
+    
+    torch.save({
         'epoch': epoch,
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'metrics': metrics,
-    }
+        'model_state_dict': 模型.state_dict(),
+    }, save_path)
     
-    path = save_dir / f"checkpoint_epoch_{epoch}.pth"
-    torch.save(checkpoint, path)
-    return path
+    print(f"模型已保存: {save_path}")
 ```
 
-## 4. 评价指标
-
-### 4.1 指标定义
-
-| 指标 | 计算 | 用途 |
-|------|------|------|
-| Accuracy | 正确数/总数 | 整体性能 |
-| F1-Score | 2×(P×R)/(P+R) | 平衡考虑 |
-| Precision | TP/(TP+FP) | 阳性预测准确性 |
-| Recall | TP/(TP+FN) | 故障检出能力 |
-
-### 4.2 计算代码
+### 加载模型
 
 ```python
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    classification_report,
-    confusion_matrix
-)
+def 加载模型(模型, 文件名: str):
+    """加载已保存的模型"""
+    save_path = os.path.join(PROJECT_ROOT, "04_models_ckpt", 文件名)
+    
+    checkpoint = torch.load(save_path, map_location='cpu')
+    模型.load_state_dict(checkpoint['model_state_dict'])
+    
+    return 模型
+```
 
-def evaluate_model(y_true, y_pred) -> dict:
-    """评估模型性能"""
+## 5. 评价指标
+
+### 常用指标
+
+| 指标 | 什么意思 | 越高越好还是越低越好 |
+|------|----------|---------------------|
+| 准确率 | 分类正确的比例 | 越高越好 |
+| F1分数 | 综合考虑查准率和召回率 | 越高越好 |
+| 混淆矩阵 | 看哪些类容易搞混 | 对角线越大越好 |
+
+### 计算方法
+
+```python
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+
+def 评估模型(真实标签, 预测标签):
+    """评估模型并打印结果"""
+    准确率 = accuracy_score(真实标签, 预测标签)
+    F1 = f1_score(真实标签, 预测标签, average='macro')
+    混淆 = confusion_matrix(真实标签, 预测标签)
+    
+    print("=" * 40)
+    print("评估结果")
+    print("=" * 40)
+    print(f"准确率: {准确率:.4f} ({准确率*100:.2f}%)")
+    print(f"F1分数: {F1:.4f}")
+    print("混淆矩阵:")
+    print(混淆)
+    print("=" * 40)
+    
     return {
-        'accuracy': accuracy_score(y_true, y_pred),
-        'f1_macro': f1_score(y_true, y_pred, average='macro'),
-        'f1_weighted': f1_score(y_true, y_pred, average='weighted'),
-        'confusion_matrix': confusion_matrix(y_true, y_pred),
-        'classification_report': classification_report(y_true, y_pred),
+        'accuracy': 准确率,
+        'f1_score': F1,
+        'confusion_matrix': 混淆.tolist()
     }
 ```
 
-## 5. 版本控制
+## 6. 检查清单
 
-- 重要实验结果打Git标签
-- 配置文件版本化管理
-- 代码提交前必须通过测试
-- 📊 实验结果定期备份
+实验结束后检查：
 
-## 6. 验证清单
+- [ ] 日志文件完整（训练过程都记下来了）
+- [ ] 图片保存成功（高清PNG格式）
+- [ ] 指标数据保存成功（CSV格式）
+- [ ] 模型权重保存成功
+- [ ] 可以根据日志复现实验
 
-- [ ] 每次实验有完整配置记录
-- [ ] 日志使用结构化格式
-- [ ] 模型权重保存完整
-- [ ] 评估指标计算正确
-- [ ] 结果文件命名规范
+## 7. 备份重要结果
+
+```
+实验做完要备份：
+1. 模型文件 → 备份到云盘或移动硬盘
+2. 评估结果 → 备份到云盘或移动硬盘
+3. 重要图表 → 备份到云盘或移动硬盘
+```
