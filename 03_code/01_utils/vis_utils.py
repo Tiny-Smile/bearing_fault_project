@@ -10,6 +10,24 @@ import seaborn as sns
 from typing import List, Optional, Tuple
 import os
 
+# 智能获取项目根目录
+def get_project_root():
+    """智能获取项目根目录"""
+    current_file = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file)
+    
+    search_dir = current_dir
+    while search_dir != os.path.dirname(search_dir):
+        parent = os.path.dirname(search_dir)
+        if (os.path.exists(os.path.join(parent, "02_data")) and 
+            os.path.exists(os.path.join(parent, "03_code"))):
+            return parent
+        search_dir = parent
+    
+    return os.path.dirname(current_dir)
+
+PROJECT_ROOT = get_project_root()
+
 
 # 设置中文字体支持
 plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans']
@@ -242,7 +260,7 @@ def plot_cwt_samples(cwt_data: np.ndarray,
 
 
 def create_experiment_report(metrics_dict: dict, 
-                        save_dir: str = "./06_results/figures/") -> None:
+                        save_dir: str = None) -> None:
     """
     创建实验报告的综合可视化
     
@@ -259,6 +277,10 @@ def create_experiment_report(metrics_dict: dict,
         ... }
         >>> create_experiment_report(metrics, "./experiment_results/")
     """
+    # 默认保存目录
+    if save_dir is None:
+        save_dir = os.path.join(PROJECT_ROOT, "06_results", "figures")
+    
     os.makedirs(save_dir, exist_ok=True)
     
     # 1. 绘制混淆矩阵
@@ -291,9 +313,30 @@ def create_experiment_report(metrics_dict: dict,
     print(f"实验报告图表已保存到: {save_dir}")
 
 
+def get_project_root():
+    """智能获取项目根目录"""
+    current_file = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file)
+    
+    search_dir = current_dir
+    while search_dir != os.path.dirname(search_dir):
+        parent = os.path.dirname(search_dir)
+        if (os.path.exists(os.path.join(parent, "02_data")) and 
+            os.path.exists(os.path.join(parent, "03_code"))):
+            return parent
+        search_dir = parent
+    
+    return os.path.dirname(current_dir)
+
+PROJECT_ROOT = get_project_root()
+
+
 if __name__ == "__main__":
     # 测试可视化功能
     print("=== 可视化工具测试 ===\n")
+    
+    figures_dir = os.path.join(PROJECT_ROOT, "06_results", "figures")
+    os.makedirs(figures_dir, exist_ok=True)
     
     # 测试混淆矩阵
     print("测试1: 混淆矩阵可视化")
@@ -303,7 +346,7 @@ if __name__ == "__main__":
         [0, 1, 47, 2],
         [0, 0, 1, 49]
     ])
-    plot_confusion_matrix(test_cm, "./06_results/figures/test_confusion_matrix.png")
+    plot_confusion_matrix(test_cm, os.path.join(figures_dir, "test_confusion_matrix.png"))
     
     print("\n" + "="*50 + "\n")
     
@@ -316,7 +359,7 @@ if __name__ == "__main__":
     val_acc = [0.48 + 0.025*i - 0.01*np.cos(i/3) for i in range(epochs)]
     
     plot_train_curve(train_loss, val_loss, train_acc, val_acc, 
-                   "./06_results/figures/test_training_curves.png")
+                   os.path.join(figures_dir, "test_training_curves.png"))
     
     print("\n" + "="*50 + "\n")
     
@@ -329,7 +372,7 @@ if __name__ == "__main__":
         '滚动体故障': {'precision': 0.85, 'recall': 0.87, 'f1_score': 0.86}
     }
     
-    plot_class_metrics(test_metrics, "./06_results/figures/test_class_metrics.png")
+    plot_class_metrics(test_metrics, os.path.join(figures_dir, "test_class_metrics.png"))
     
     print(f"\n=== 测试完成 ===")
-    print("所有测试图表已保存到 ./06_results/figures/ 目录")
+    print(f"所有测试图表已保存到 {figures_dir} 目录")

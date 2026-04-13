@@ -496,7 +496,7 @@ def batch_preprocess_cwru(raw_dir: str, out_dir: str) -> Tuple[List[str], List[i
 def visualize_preprocess_comparison(original_signals: List[np.ndarray], 
                               labels: List[int], 
                               file_names: List[str],
-                              save_path: str = "./06_results/figures/preprocess_compare.png"):
+                              save_path: str = None):
     """
     可视化预处理前后的信号波形与频谱对比
     
@@ -506,6 +506,12 @@ def visualize_preprocess_comparison(original_signals: List[np.ndarray],
         file_names (List[str]): 文件名列表
         save_path (str): 图片保存路径
     """
+    # 默认保存路径
+    if save_path is None:
+        figures_dir = os.path.join(PROJECT_ROOT, "06_results", "figures")
+        os.makedirs(figures_dir, exist_ok=True)
+        save_path = os.path.join(figures_dir, "preprocess_compare.png")
+    
     print(f"生成预处理对比图，保存到: {save_path}")
     
     # 确保输出目录存在
@@ -664,7 +670,10 @@ def split_and_save_cwru(preprocessed_dir: str,
     
     # 确保输出目录存在
     os.makedirs(out_dir, exist_ok=True)
-    os.makedirs("./06_results/metrics/", exist_ok=True)
+    
+    # 确保结果目录存在
+    metrics_dir = os.path.join(PROJECT_ROOT, "06_results", "metrics")
+    os.makedirs(metrics_dir, exist_ok=True)
     
     # 1. 读取所有预处理后的数据文件
     print("\n步骤1: 读取预处理数据...")
@@ -850,7 +859,8 @@ def split_and_save_cwru(preprocessed_dir: str,
     df_stats = pd.DataFrame(table_data)
     
     # 保存统计表格
-    csv_path = "./06_results/metrics/dataset_split.csv"
+    metrics_dir = os.path.join(PROJECT_ROOT, "06_results", "metrics")
+    csv_path = os.path.join(metrics_dir, "dataset_split.csv")
     df_stats.to_csv(csv_path, index=False, encoding='utf-8-sig')
     print(f"统计表格已保存: {csv_path}")
     
