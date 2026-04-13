@@ -1,0 +1,7 @@
+Basic CNN Model Test Results
+========================================
+Test time: 2026-04-10 18:47:35
+Test samples: 32
+Correct predictions: 5
+Accuracy: 15.62%
+Model parameters: 33,560,164

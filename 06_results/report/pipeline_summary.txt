@@ -1,0 +1,25 @@
+Bearing Fault Diagnosis Pipeline Summary
+==================================================
+Report generated: 2026-04-10 18:47:35
+Project root: E:\PycharmProjects\gradualationProjects\bearing_fault_project
+Data directory: ./02_data
+Results directory: ./06_results
+
+Data Summary:
+  cwt_test.npz: 90.6 MB
+  cwt_train.npz: 314.4 MB
+  cwt_val.npz: 48.2 MB
+
+Pipeline Status:
+  Data check: Completed
+  Model testing: Completed
+  Report generation: Completed
+
+Basic Test Results:
+Basic CNN Model Test Results
+========================================
+Test time: 2026-04-10 18:47:35
+Test samples: 32
+Correct predictions: 5
+Accuracy: 15.62%
+Model parameters: 33,560,164
