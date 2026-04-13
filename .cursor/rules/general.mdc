@@ -1,0 +1,111 @@
+---
+description: 项目通用规范 - 结构、命名、路径管理
+alwaysApply: true
+---
+
+# 项目通用规范
+
+## 输出语言
+- **中文输出**
+- 禁止输出总结性、测试性的 md、txt 文件
+
+## 项目目录结构
+
+```
+项目根目录/
+├── 01_env/          # 虚拟环境
+├── 02_data/         # 数据集
+│   ├── raw/         # 原始数据（不许改！）
+│   ├── preprocessed/ # 预处理后数据
+│   ├── cwt/         # CWT时频图
+│   └── augmented/   # GAN增强数据
+├── 03_code/         # 核心代码
+│   ├── 01_utils/    # 工具函数
+│   ├── 02_models/   # 模型定义
+│   ├── 03_train/    # 训练脚本
+│   └── 04_test/     # 测试脚本
+├── 04_models_ckpt/  # 模型权重
+├── 05_logs/         # 日志
+└── 06_results/      # 实验结果
+```
+
+## 文件命名规范
+
+| 类型 | 格式 | 好例子 |
+|------|------|--------|
+| 模型文件 | `{名字}.py` | `cnn.py`, `swin_ca.py` |
+| 数据文件 | `{名字}_{版本}.npz` | `cwru_v1.npz` |
+| 配置文件 | `config_{名字}.yaml` | `config.yaml` |
+| 日志文件 | `{名字}_{日期}.log` | `train_20260413.log` |
+
+## 路径管理（重要！）
+
+**路径一定不要写死！用下面这种方法：**
+
+### 方法一：在文件顶部定义项目根目录
+
+```python
+# 导入系统工具
+import os
+
+# 这一段代码的意思是：从当前文件出发，一层层往上找
+# 直到找到同时有 "02_data" 和 "03_code" 的文件夹
+# 那就是项目根目录
+current_file = os.path.abspath(__file__)  # 获取当前文件的绝对路径
+current_dir = os.path.dirname(current_file)  # 获取当前文件所在文件夹
+
+# 往上找项目根目录
+search_dir = current_dir
+while search_dir != os.path.dirname(search_dir):  # 一直找到最顶层
+    parent = os.path.dirname(search_dir)
+    # 如果找到了 02_data 和 03_code，说明找到根目录了
+    if (os.path.exists(os.path.join(parent, "02_data")) and 
+        os.path.exists(os.path.join(parent, "03_code"))):
+        PROJECT_ROOT = parent
+        break
+    search_dir = parent
+
+# 如果没找到，就用当前目录的父目录
+if 'PROJECT_ROOT' not in dir():
+    PROJECT_ROOT = os.path.dirname(current_dir)
+
+# 然后就可以用这个根目录来构建所有路径了！
+DATA_DIR = os.path.join(PROJECT_ROOT, "02_data")
+RESULTS_DIR = os.path.join(PROJECT_ROOT, "06_results")
+```
+
+### 方法二：直接拼接路径（更简单）
+
+```python
+import os
+
+# 定义项目根目录（手动指定，通常是包含 01_env, 02_data 等文件夹的那一层）
+PROJECT_ROOT = r"E:\PycharmProjects\gradualationProjects\bearing_fault_project"
+
+# 用 os.path.join 拼接路径，这样在不同电脑上也能用
+DATA_DIR = os.path.join(PROJECT_ROOT, "02_data")
+RESULTS_DIR = os.path.join(PROJECT_ROOT, "06_results")
+FIGURES_DIR = os.path.join(RESULTS_DIR, "figures")
+
+# 确保文件夹存在
+os.makedirs(FIGURES_DIR, exist_ok=True)
+
+# 保存文件的时候用
+save_path = os.path.join(FIGURES_DIR, "test.png")
+print(f"图片会保存到: {save_path}")
+```
+
+### ❌ 禁止这样写路径
+
+```python
+# 这些都是错的！
+save_path = "./06_results/figures/test.png"  # ❌ 硬编码相对路径
+save_path = "E:\\项目\\06_results\\test.png"  # ❌ 硬编码绝对路径
+```
+
+## 禁止事项
+
+- ❌ 禁止硬编码文件路径（用上面的方法）
+- ❌ 禁止提交有 print 调试信息的代码
+- ❌ 禁止提交密码或密钥
+- ❌ 禁止输出 md、txt 结果文件到代码目录
