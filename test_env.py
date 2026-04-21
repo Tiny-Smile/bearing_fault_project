@@ -10,5 +10,5 @@ print("Scikit-learn版本：", sklearn.__version__)
 
 # 路径验证
 import os
-print("数据集目录存在：", os.path.exists("./02_data/raw"))
-print("工具目录存在：", os.path.exists("./03_code/01_utils"))
+print("数据集目录存在：", os.path.exists("./p02_data/raw"))
+print("工具目录存在：", os.path.exists("./p03_code/p01_utils"))

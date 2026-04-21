@@ -6,8 +6,8 @@
 
 ```
 bearing_fault_project/
-├── 01_env/                # 虚拟环境（隔离依赖，避免冲突）
-├── 02_data/               # 数据集（原始+预处理+增强后）
+├── p01_env/                # 虚拟环境（隔离依赖，避免冲突）
+├── p02_data/               # 数据集（原始+预处理+增强后）
 │   ├── raw/               # 原始数据集（CWRU+工业数据集，不修改）
 │   │   ├── cwru/          # CWRU公开数据集（按故障类别分类）
 │   │   └── industrial/    # 企业工业数据集（按传感器通道分类）
@@ -16,37 +16,37 @@ bearing_fault_project/
 │   │   └── industrial/    # 预处理后的工业数据
 │   ├── cwt/               # CWT时频图数据（单通道/多通道张量）
 │   └── augmented/         # cDWGAN-GP增强后的数据（后期扩展）
-├── 03_code/               # 核心代码（按功能模块化，便于Windsurf生成/整合）
-│   ├── 01_utils/          # 通用工具函数（所有模块复用）
+├── p03_code/               # 核心代码（按功能模块化，便于Windsurf生成/整合）
+│   ├── p01_utils/          # 通用工具函数（所有模块复用）
 │   │   ├── data_utils.py  # 数据加载/预处理/划分
 │   │   ├── cwt_utils.py   # CWT变换（Morlet小波）
 │   │   ├── metric_utils.py # 评价指标（准确率/F1/混淆矩阵）
 │   │   ├── vis_utils.py   # 可视化（波形/时频图/混淆矩阵）
 │   │   └── __init__.py    # 包初始化（方便导入）
-│   ├── 02_models/         # 模型定义（按模型类型拆分）
+│   ├── p02_models/         # 模型定义（按模型类型拆分）
 │   │   ├── cnn_baseline.py # Baseline CNN模型
 │   │   ├── cdwgan_gp.py   # 数据增强模型（后期扩展）
 │   │   ├── swin_ca.py     # Swin-T+CA诊断模型（后期扩展）
 │   │   └── __init__.py
-│   ├── 03_train/          # 训练脚本（按模型拆分）
+│   ├── p03_train/          # 训练脚本（按模型拆分）
 │   │   ├── train_cnn.py   # CNN Baseline训练
 │   │   ├── train_cdwgan.py # cDWGAN-GP训练（后期扩展）
 │   │   ├── train_swin.py  # Swin-T+CA训练（后期扩展）
 │   │   └── __init__.py
-│   ├── 04_test/           # 测试/评估脚本
+│   ├── p04_test/           # 测试/评估脚本
 │   │   ├── test_cnn.py    # CNN Baseline测试
 │   │   ├── test_swin.py   # Swin-T+CA测试（后期扩展）
 │   │   └── __init__.py
 │   └── 05_run_all.py      # 端到端一键运行脚本（整合所有流程）
-├── 04_models_ckpt/        # 训练好的模型权重（按模型/时间命名）
+├── p04_models_ckpt/        # 训练好的模型权重（按模型/时间命名）
 │   ├── cnn_baseline/      # CNN Baseline权重
 │   ├── cdwgan_gp/         # cDWGAN-GP权重（后期扩展）
 │   └── swin_ca/           # Swin-T+CA权重（后期扩展）
-├── 05_logs/               # 训练日志（损失/准确率/报错信息）
+├── p05_logs/               # 训练日志（损失/准确率/报错信息）
 │   ├── train_cnn.log      # CNN训练日志
 │   ├── train_cdwgan.log   # cDWGAN训练日志（后期扩展）
 │   └── error.log          # 全局错误日志
-├── 06_results/            # 实验结果（可视化图+报告）
+├── p06_results/            # 实验结果（可视化图+报告）
 │   ├── figures/           # 论文用图（波形/时频图/混淆矩阵）
 │   ├── metrics/           # 指标表格（csv格式）
 │   └── report/            # 实验报告（md/pdf）
@@ -92,11 +92,11 @@ python test_env.py
 
 ### 运行步骤
 
-1. **数据准备**: 将原始数据放入 `02_data/raw/` 目录
+1. **数据准备**: 将原始数据放入 `p02_data/raw/` 目录
 2. **数据预处理**: 运行数据预处理脚本
 3. **模型训练**: 选择相应的训练脚本
 4. **模型测试**: 运行测试脚本评估性能
-5. **结果分析**: 查看 `06_results/` 目录中的结果
+5. **结果分析**: 查看 `p06_results/` 目录中的结果
 
 ### 项目特性
 
