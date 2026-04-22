@@ -255,22 +255,22 @@ Examples:
         # 运行训练
         start_time = datetime.now()
         model, test_metrics, train_history = train_main(
-            数据路径=args.data_dir,
-            样本长度=args.sample_length,
-            步长=args.stride,
-            归一化方法=args.normalize,
-            训练集比例=args.train_ratio,
-            批次大小=args.batch_size,
-            训练轮数=args.epochs,
-            学习率=args.lr,
-            权重衰减=args.weight_decay,
-            优化器类型=args.optimizer,
-            调度器类型=args.scheduler,
-            早停耐心值=args.patience,
-            随机种子=args.seed,
-            日志间隔=args.log_interval,
-            模型保存路径=args.model_path,
-            使用GPU=not args.no_gpu,
+            data_path=args.data_dir,
+            sample_length=args.sample_length,
+            stride=args.stride,
+            normalize=args.normalize,
+            train_ratio=args.train_ratio,
+            batch_size=args.batch_size,
+            epochs=args.epochs,
+            learning_rate=args.lr,
+            weight_decay=args.weight_decay,
+            optimizer_type=args.optimizer,
+            scheduler_type=args.scheduler,
+            early_stopping_patience=args.patience,
+            random_seed=args.seed,
+            log_interval=args.log_interval,
+            model_save_path=args.model_path,
+            use_gpu=not args.no_gpu,
         )
 
         training_time = (datetime.now() - start_time).total_seconds()
