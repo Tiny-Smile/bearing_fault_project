@@ -6,15 +6,44 @@ alwaysApply: true
 
 # Python 代码规范
 
-## 1. 起名字的规矩
+## 1. 起名字的规矩（统一使用英文命名）
 
 | 东西 | 怎么起名 | 好例子 | 坏例子 |
 |------|----------|--------|--------|
-| 变量 | 用小写，单词用下划线连 | `signal_data`, `count` | `signalData`, `countNum` |
-| 函数 | 用小写，动词开头 | `加载数据()`, `保存图片()` | `LoadData()`, `GetData()` |
-| 类名 | 每个单词首字母大写 | `数据加载器`, `CNN模型` | `data_loader`, `cnn_model` |
-| 常量 | 全用大写 | `最大样本数`, `采样率` | `MAX_COUNT`, `SampleRate` |
-| 私有东西 | 前面加一个下划线 | `_缓存数据`, `_内部函数()` | `privateData`, `__data` |
+| 变量 | 用小写，单词用下划线连 | `signal_data`, `sample_count` | `signalData`, `样本数` |
+| 函数/方法 | 用小写，动词开头，下划线连接 | `load_data()`, `split_train_test()` | `LoadData()`, `加载数据()` |
+| 类名 | 每个单词首字母大写（PascalCase） | `CWRUDataset`, `CNN1D` | `data_loader`, `cnn_model` |
+| 常量 | 全用大写，下划线连接 | `DEFAULT_SAMPLE_LENGTH`, `MAX_EPOCHS` | `最大样本数`, `SampleRate` |
+| 私有东西 | 前面加一个下划线 | `_cache_data`, `_init_weights()` | `privateData`, `__data` |
+
+> **重要**：所有函数名、变量名、参数名统一使用英文命名，不使用中文拼音或中文。中文仅用于注释和文档字符串中解释说明。英文命名遵循 Python 社区惯例（PEP 8）。
+
+### 命名风格对照表
+
+```python
+# 变量命名（小写下划线）
+signal_data           # 信号数据
+sample_length         # 样本长度
+train_ratio           # 训练集比例
+class_distribution    # 类别分布
+
+# 函数命名（小写下划线，动词开头）
+def load_data():           # 加载数据
+def split_train_test():    # 划分训练测试集
+def normalize_signal():    # 归一化信号
+def train_epoch():         # 训练一个epoch
+
+# 类命名（PascalCase）
+class CWRUDataset:         # CWRU数据集类
+class CNN1D:              # 1D-CNN模型类
+class Trainer:            # 训练器类
+class Evaluator:          # 评估器类
+
+# 常量命名（全大写下划线）
+DEFAULT_SAMPLE_LENGTH = 1024
+DEFAULT_STRIDE = 512
+MAX_EPOCHS = 100
+
 
 ## 2. 给函数加上类型提示（让代码更好懂）
 
@@ -22,22 +51,21 @@ alwaysApply: true
 就是告诉别人这个变量应该是什么类型，比如是数字、字符串、还是列表。
 
 ```python
-# 导入需要的类型
 from typing import List, Tuple, Optional
 
 # 类型提示格式：
 # def 函数名(参数: 参数类型) -> 返回类型:
 
-def 计算平均值(数字列表: List[float]) -> float:
+def calculate_mean(data: List[float]) -> float:
     """计算一串数字的平均值"""
-    总和 = sum(数字列表)
-    个数 = len(数字列表)
-    return 总和 / 个数
+    total = sum(data)
+    count = len(data)
+    return total / count
 
 # 用法
-成绩 = [90, 85, 78, 92]
-平均分 = 计算平均值(成绩)
-print(f"平均分是: {平均分}")
+scores = [90, 85, 78, 92]
+avg_score = calculate_mean(scores)
+print(f"平均分是: {avg_score}")
 ```
 
 ### 常用类型提示
@@ -57,26 +85,26 @@ print(f"平均分是: {平均分}")
 from typing import List, Tuple, Optional
 
 # 一个输入，一个输出
-def 读取文件(文件路径: str) -> List[str]:
+def read_file(file_path: str) -> List[str]:
     """读取文件，返回每行内容"""
-    with open(文件路径, 'r', encoding='utf-8') as f:
-        内容 = f.readlines()
-    return 内容
+    with open(file_path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()
+    return lines
 
 # 多个输入，多个输出
-def 处理数据(数据: List[float], 是否标准化: bool) -> Tuple[List[float], float]:
+def process_data(data: List[float], normalize: bool) -> Tuple[List[float], float]:
     """处理数据，可选标准化，返回处理后的数据和平均值"""
-    平均值 = sum(数据) / len(数据)
-    if 是否标准化:
-        数据 = [x - 平均值 for x in 数据]
-    return 数据, 平均值
+    mean = sum(data) / len(data)
+    if normalize:
+        data = [x - mean for x in data]
+    return data, mean
 
 # 有些参数可以没有（可选参数）
-def 创建矩阵(行数: int, 列数: int, 填充值: Optional[float] = None) -> List[List[float]]:
+def create_matrix(rows: int, cols: int, fill_value: Optional[float] = None) -> List[List[float]]:
     """创建一个矩阵"""
-    if 填充值 is None:
-        return [[0.0] * 列数 for _ in range(行数)]
-    return [[填充值] * 列数 for _ in range(行数)]
+    if fill_value is None:
+        return [[0.0] * cols for _ in range(rows)]
+    return [[fill_value] * cols for _ in range(rows)]
 ```
 
 ## 3. 给函数写说明（docstring）
@@ -86,23 +114,23 @@ def 创建矩阵(行数: int, 列数: int, 填充值: Optional[float] = None) ->
 ### 格式（用中文写）
 
 ```python
-def 加法(数字1: int, 数字2: int) -> int:
+def add(a: int, b: int) -> int:
     """
     计算两个数字的和
-    
-    参数:
-        数字1: 第一个加数
-        数字2: 第二个加数
-    
-    返回:
+
+    Args:
+        a: 第一个加数
+        b: 第二个加数
+
+    Returns:
         两个数字相加的结果
-    
-    例子:
-        >>> 结果 = 加法(3, 5)
-        >>> print(结果)
+
+    Example:
+        >>> result = add(3, 5)
+        >>> print(result)
         8
     """
-    return 数字1 + 数字2
+    return a + b
 ```
 
 ### 说明要包含什么
@@ -119,26 +147,26 @@ def 加法(数字1: int, 数字2: int) -> int:
 ### ✅ 好的注释（解释为什么这样做）
 
 ```python
-# 用对数尺度是因为低频部分我们需要更精细的分析
-scales = [1, 2, 4, 8, 16, 32, 64]  # 对数增长
+# 对数尺度：低频部分需要更精细的分析
+scales = [1, 2, 4, 8, 16, 32, 64]
 
-# 这里要用 0.01 而不是 0.1，因为后者会导致梯度爆炸
-学习率 = 0.01
+# 这里用 0.01 而不是 0.1，后者会导致梯度爆炸
+learning_rate = 0.01
 
 # 归一化到 [0, 1]，方便模型处理
-数据 = (数据 - 最小值) / (最大值 - 最小值)
+data = (data - min_val) / (max_val - min_val)
 ```
 
 ### ❌ 不好的注释（说了等于没说）
 
 ```python
 # 遍历每个样本
-for 样本 in 样本列表:
-    处理(样本)
+for sample in sample_list:
+    process(sample)
 
 # 如果 x 大于 0
 if x > 0:
-    print("正数")
+    print("positive")
 ```
 
 ## 5. 错误处理（让程序崩溃时知道哪里出错）
@@ -146,37 +174,34 @@ if x > 0:
 ### 基本的 try-except
 
 ```python
-def 读取数据(文件路径: str):
+def read_data(file_path: str):
     """读取数据文件"""
     try:
-        # 尝试打开文件
-        with open(文件路径, 'r') as f:
-            数据 = f.read()
-        print("读取成功！")
-        return 数据
+        with open(file_path, 'r') as f:
+            data = f.read()
+        print("读取成功!")
+        return data
     except FileNotFoundError:
-        # 文件不存在
-        print(f"错误：文件不存在 - {文件路径}")
+        print(f"错误: 文件不存在 - {file_path}")
     except Exception as e:
-        # 其他错误
-        print(f"错误：读取失败 - {e}")
+        print(f"错误: 读取失败 - {e}")
 ```
 
 ### 主动检查并报错
 
 ```python
-def 处理信号(信号, 采样率):
+def process_signal(signal, sampling_rate):
     """处理振动信号"""
     # 先检查输入是否合法
-    if 采样率 <= 0:
+    if sampling_rate <= 0:
         raise ValueError("采样率必须大于0")
-    
-    if len(信号) == 0:
+
+    if len(signal) == 0:
         raise ValueError("信号不能为空")
-    
-    # 检查通过，开始处理
-    处理后的信号 = 信号 * 2  # 这里是举例
-    return 处理后的信号
+
+    # 处理逻辑
+    processed = signal * 2
+    return processed
 ```
 
 ## 6. 代码审查清单

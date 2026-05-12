@@ -1,16 +1,17 @@
 """
 1D-CNN 轴承故障诊断模型训练脚本
 
-完整训练流程：
-1. 数据加载与预处理
-2. 模型构建
-3. 训练循环（含早停、学习率调度）
-4. 模型评估
-5. 结果保存与可视化
+功能：
+    1. 加载真实的 CWRU .mat 数据文件
+    2. 构建 1D-CNN 模型
+    3. 训练循环（含早停、学习率调度）
+    4. 在测试集上评估模型
+    5. 保存模型权重、训练曲线、混淆矩阵
 
 使用方法：
     python train_cnn1d.py
-    python train_cnn1d.py --config config_cnn1d.yaml
+    python train_cnn1d.py --data_dir p02_data/raw/cwru --epochs 30
+    python train_cnn1d.py --epochs 50 --batch_size 64 --lr 0.0005
 """
 
 import os
@@ -40,18 +41,16 @@ import seaborn as sns
 # 添加项目路径
 _current_file = os.path.abspath(__file__)
 _current_dir = os.path.dirname(_current_file)
-_code_dir = os.path.dirname(_current_dir)  # p03_code目录
 sys.path.insert(0, _current_dir)
-sys.path.insert(0, _code_dir)
 
 from p01_utils.cwru_dataset import (
     CWRUDataset,
-    创建数据加载器,
-    划分训练测试集,
-    打印数据统计,
+    split_train_test,
+    create_dataloaders,
+    print_dataset_statistics,
     CLASS_NAMES,
 )
-from p02_models.cnn1d import CNN1D, 打印模型结构
+from p02_models.cnn1d import CNN1D, print_model_structure
 
 
 # =============================================================================
@@ -84,39 +83,39 @@ for _dir in [LOG_DIR, MODEL_CKPT_DIR, RESULTS_DIR, FIGURES_DIR]:
 
 
 # =============================================================================
-# 训练器类
+# 训练器类（Trainer）
 # =============================================================================
-class 训练器:
+class Trainer:
     """
     1D-CNN 模型训练器
 
     负责：
-    - 模型训练循环
-    - 验证与测试
+    - 单轮训练（train_epoch）
+    - 验证评估（_validate）
     - 学习率调度
-    - 早停机制
-    - 训练过程记录
+    - 早停机制（Early Stopping）
+    - 训练历史记录
     """
 
     def __init__(
         self,
-        model,  # PyTorch 模型
-        device: torch.device,  # 训练设备
-        learning_rate: float = 0.001,  # 初始学习率
-        weight_decay: float = 1e-4,  # L2 正则化系数
-        optimizer_type: str = "adam",  # 优化器类型: "adam", "sgd", "adamw"
-        scheduler_type: str = "step",  # 学习率调度器: "step", "cosine", "none"
-        scheduler_step: int = 20,  # 学习率下降间隔（step调度器）
-        scheduler_gamma: float = 0.5,  # 学习率下降倍数
-        early_stopping_patience: int = 15,  # 早停容忍轮数
-        early_stopping_min_delta: float = 0.001,  # 被认为有提升的最小变化量
-        grad_clip_threshold: Optional[float] = None,  # 梯度裁剪阈值，None表示不裁剪
+        model: nn.Module,                       # PyTorch 模型
+        device: torch.device,                   # 训练设备（cuda 或 cpu）
+        learning_rate: float = 0.001,           # 初始学习率
+        weight_decay: float = 1e-4,             # L2 正则化系数，防止过拟合
+        optimizer_type: str = "adam",            # 优化器类型："adam" | "sgd" | "adamw"
+        scheduler_type: str = "step",            # 学习率调度器："step" | "cosine" | "none"
+        scheduler_step: int = 20,               # StepLR 的 step_size（每隔多少 epoch 下降一次）
+        scheduler_gamma: float = 0.5,           # 学习率下降倍数（每 step 乘以此值）
+        early_stopping_patience: int = 15,      # 早停容忍轮数（验证损失多少轮无改善则停止）
+        early_stopping_min_delta: float = 0.001,# 被认为有提升的最小改善量
+        grad_clip_threshold: Optional[float] = None,  # 梯度裁剪阈值，None 表示不裁剪
     ) -> None:
         """
-        初始化训练器
+        初始化训练器。
 
         Args:
-            model: PyTorch 模型
+            model: PyTorch 模型实例
             device: 训练设备
             learning_rate: 初始学习率
             weight_decay: L2 正则化系数
@@ -128,61 +127,63 @@ class 训练器:
             early_stopping_min_delta: 被认为有提升的最小变化量
             grad_clip_threshold: 梯度裁剪阈值
         """
-        self.模型 = model
-        self.设备 = device
-        self.梯度裁剪阈值 = grad_clip_threshold
+        self.model = model
+        self.device = device
+        self.grad_clip_threshold = grad_clip_threshold
 
-        # 损失函数
-        self.损失函数 = nn.CrossEntropyLoss()
+        # 损失函数：交叉熵（适用于多分类任务）
+        self.criterion = nn.CrossEntropyLoss()
 
-        # 优化器
+        # ---- 优化器配置 ----
         if optimizer_type.lower() == "adam":
-            self.优化器 = optim.Adam(
+            self.optimizer = optim.Adam(
                 model.parameters(),
                 lr=learning_rate,
                 weight_decay=weight_decay,
             )
         elif optimizer_type.lower() == "sgd":
-            self.优化器 = optim.SGD(
+            self.optimizer = optim.SGD(
                 model.parameters(),
                 lr=learning_rate,
                 momentum=0.9,
                 weight_decay=weight_decay,
             )
-        elif optimizer_type.lower() == "adamw":
-            self.优化器 = optim.AdamW(
+        elif optimizer_type.lower() == "adamw": 
+            self.optimizer = optim.AdamW(
                 model.parameters(),
                 lr=learning_rate,
                 weight_decay=weight_decay,
             )
         else:
-            raise ValueError(f"不支持的优化器类型: {optimizer_type}")
+            raise ValueError(f"不支持的优化器类型: {optimizer_type}，请使用 adam / sgd / adamw")
 
-        # 学习率调度器
+        # ---- 学习率调度器配置 ----
         if scheduler_type.lower() == "step":
-            self.调度器 = StepLR(
-                self.优化器,
+            # 每 scheduler_step 个 epoch 将学习率乘以 scheduler_gamma
+            self.scheduler = StepLR(
+                self.optimizer,
                 step_size=scheduler_step,
                 gamma=scheduler_gamma,
             )
         elif scheduler_type.lower() == "cosine":
-            self.调度器 = CosineAnnealingLR(
-                self.优化器,
+            # 余弦退火调度
+            self.scheduler = CosineAnnealingLR(
+                self.optimizer,
                 T_max=50,
                 eta_min=1e-6,
             )
         else:
-            self.调度器 = None
+            self.scheduler = None
 
-        # 早停配置
-        self.早停耐心值 = early_stopping_patience
-        self.早停最小变化 = early_stopping_min_delta
-        self.早停计数器 = 0
-        self.最佳验证损失 = float("inf")
-        self.最佳模型状态 = None
+        # ---- 早停配置 ----
+        self.early_stopping_patience = early_stopping_patience
+        self.early_stopping_min_delta = early_stopping_min_delta
+        self.early_stopping_counter = 0   # 连续无改善的轮数计数器
+        self.best_val_loss = float("inf")  # 最佳验证损失
+        self.best_model_state: Optional[Dict] = None  # 最佳模型权重
 
-        # 训练历史
-        self.训练历史 = {
+        # 训练历史（用于绘制训练曲线）
+        self.training_history: Dict[str, List[float]] = {
             "train_loss": [],
             "train_acc": [],
             "val_loss": [],
@@ -190,232 +191,236 @@ class 训练器:
             "learning_rate": [],
         }
 
-    def 训练轮次(
+    def train_epoch(
         self,
-        train_loader: DataLoader,  # 训练数据迭代器
-        val_loader: Optional[DataLoader] = None,  # 验证数据迭代器（可选）
-        epoch: int = 1,  # 当前轮次编号
-        log_interval: int = 10,  # 日志打印间隔
+        train_loader: DataLoader,
+        val_loader: Optional[DataLoader] = None,
+        epoch: int = 1,
+        log_interval: int = 10,
     ) -> Dict[str, float]:
         """
-        训练一个轮次
+        训练一个 epoch。
 
         Args:
             train_loader: 训练数据迭代器
             val_loader: 验证数据迭代器（可选）
-            epoch: 当前轮次编号
-            log_interval: 日志打印间隔
+            epoch: 当前 epoch 编号
+            log_interval: 打印日志的批次间隔
 
         Returns:
-            本轮训练指标字典
+            包含 train_loss、train_acc、val_loss、val_acc、learning_rate 的字典
         """
-        self.模型.train()
-        总损失 = 0.0
-        正确数 = 0
-        总样本数 = 0
+        self.model.train()
+        total_loss = 0.0
+        correct = 0
+        total = 0
 
-        for 批次索引, (数据, 标签) in enumerate(train_loader):
-            数据 = 数据.to(self.设备)
-            标签 = 标签.to(self.设备)
+        for batch_idx, (data, labels) in enumerate(train_loader):
+            data = data.to(self.device)
+            labels = labels.to(self.device)
 
-            # 前向传播
-            self.优化器.zero_grad()
-            输出 = self.模型.前向传播(数据)
-            损失 = self.损失函数(输出, 标签)
+            # ---- 前向传播 ----
+            self.optimizer.zero_grad()
+            outputs = self.model.forward(data)
+            loss = self.criterion(outputs, labels)
 
-            # 反向传播
-            损失.backward()
+            # ---- 反向传播 ----
+            loss.backward()
 
-            # 梯度裁剪
-            if self.梯度裁剪阈值 is not None:
+            # 梯度裁剪（防止梯度爆炸）
+            if self.grad_clip_threshold is not None:
                 torch.nn.utils.clip_grad_norm_(
-                    self.模型.parameters(),
-                    self.梯度裁剪阈值,
+                    self.model.parameters(),
+                    self.grad_clip_threshold,
                 )
 
-            self.优化器.step()
+            self.optimizer.step()
 
-            # 统计
-            总损失 += 损失.item()
-            预测 = 输出.argmax(dim=1)
-            正确数 += (预测 == 标签).sum().item()
-            总样本数 += 标签.size(0)
+            # ---- 统计 ----
+            total_loss += loss.item()
+            preds = outputs.argmax(dim=1)
+            correct += (preds == labels).sum().item()
+            total += labels.size(0)
 
             # 打印日志
-            if (批次索引 + 1) % log_interval == 0:
-                当前准确率 = 100.0 * 正确数 / 总样本数
-                当前损失 = 总损失 / (批次索引 + 1)
+            if (batch_idx + 1) % log_interval == 0:
+                current_acc = 100.0 * correct / total
+                current_loss = total_loss / (batch_idx + 1)
                 print(
-                    f"  Epoch {epoch:3d} | Batch {批次索引+1:4d}/{len(train_loader):4d} | "
-                    f"Loss: {当前损失:.4f} | Acc: {当前准确率:.2f}%"
+                    f"  Epoch {epoch:3d} | Batch {batch_idx+1:4d}/{len(train_loader):4d} | "
+                    f"Loss: {current_loss:.4f} | Acc: {current_acc:.2f}%"
                 )
 
-        # 计算本轮平均指标
-        平均损失 = 总损失 / len(train_loader)
-        训练准确率 = 100.0 * 正确数 / 总样本数
+        # ---- 计算本轮平均指标 ----
+        avg_loss = total_loss / len(train_loader)
+        train_acc = 100.0 * correct / total
 
-        # 更新学习率
-        if self.调度器 is not None:
-            self.调度器.step()
-            当前学习率 = self.调度器.get_last_lr()[0]
+        # ---- 更新学习率（调度器 step） ----
+        if self.scheduler is not None:
+            self.scheduler.step()
+            current_lr = self.scheduler.get_last_lr()[0]
         else:
-            当前学习率 = self.优化器.param_groups[0]["lr"]
+            current_lr = self.optimizer.param_groups[0]["lr"]
 
-        # 记录历史
-        self.训练历史["train_loss"].append(平均损失)
-        self.训练历史["train_acc"].append(训练准确率)
-        self.训练历史["learning_rate"].append(当前学习率)
+        # ---- 记录历史 ----
+        self.training_history["train_loss"].append(avg_loss)
+        self.training_history["train_acc"].append(train_acc)
+        self.training_history["learning_rate"].append(current_lr)
 
-        # 验证
-        验证指标 = {}
+        # ---- 验证 ----
+        val_metrics: Dict[str, float] = {}
         if val_loader is not None:
-            验证指标 = self._验证(val_loader)
-            self.训练历史["val_loss"].append(验证指标["loss"])
-            self.训练历史["val_acc"].append(验证指标["acc"])
+            val_metrics = self._validate(val_loader)
+            self.training_history["val_loss"].append(val_metrics["loss"])
+            self.training_history["val_acc"].append(val_metrics["acc"])
 
-            # 早停检查
-            if 验证指标["loss"] < self.最佳验证损失 - self.早停最小变化:
-                self.最佳验证损失 = 验证指标["loss"]
-                self.最佳模型状态 = {k: v.cpu().clone() for k, v in self.模型.state_dict().items()}
-                self.早停计数器 = 0
-                print(f"  ★ 验证损失改善: {self.最佳验证损失:.4f}")
+            # 早停检查：验证损失是否有改善
+            if val_metrics["loss"] < self.best_val_loss - self.early_stopping_min_delta:
+                self.best_val_loss = val_metrics["loss"]
+                # 保存最佳模型权重（深拷贝，避免引用问题）
+                self.best_model_state = {
+                    k: v.cpu().clone() for k, v in self.model.state_dict().items()
+                }
+                self.early_stopping_counter = 0
+                print(f"  ★ Validation loss improved: {self.best_val_loss:.4f}")
             else:
-                self.早停计数器 += 1
+                self.early_stopping_counter += 1
 
         return {
-            "train_loss": 平均损失,
-            "train_acc": 训练准确率,
-            "val_loss": 验证指标.get("loss", 0),
-            "val_acc": 验证指标.get("acc", 0),
-            "learning_rate": 当前学习率,
+            "train_loss": avg_loss,
+            "train_acc": train_acc,
+            "val_loss": val_metrics.get("loss", 0),
+            "val_acc": val_metrics.get("acc", 0),
+            "learning_rate": current_lr,
         }
 
-    def _验证(self, 验证数据加载器: DataLoader) -> Dict[str, float]:
+    def _validate(self, val_loader: DataLoader) -> Dict[str, float]:
         """
-        在验证集上评估模型
+        在验证集上评估模型（仅前向传播，不反向传播）。
 
         Args:
-            验证数据加载器: 验证数据迭代器
+            val_loader: 验证数据迭代器
 
         Returns:
-            验证指标字典
+            包含 loss 和 acc 的字典
         """
-        self.模型.eval()
-        总损失 = 0.0
-        正确数 = 0
-        总样本数 = 0
+        self.model.eval()
+        total_loss = 0.0
+        correct = 0
+        total = 0
 
         with torch.no_grad():
-            for 数据, 标签 in 验证数据加载器:
-                数据 = 数据.to(self.设备)
-                标签 = 标签.to(self.设备)
+            for data, labels in val_loader:
+                data = data.to(self.device)
+                labels = labels.to(self.device)
 
-                输出 = self.模型.前向传播(数据)
-                损失 = self.损失函数(输出, 标签)
+                outputs = self.model.forward(data)
+                loss = self.criterion(outputs, labels)
 
-                总损失 += 损失.item()
-                预测 = 输出.argmax(dim=1)
-                正确数 += (预测 == 标签).sum().item()
-                总样本数 += 标签.size(0)
+                total_loss += loss.item()
+                preds = outputs.argmax(dim=1)
+                correct += (preds == labels).sum().item()
+                total += labels.size(0)
 
         return {
-            "loss": 总损失 / len(验证数据加载器),
-            "acc": 100.0 * 正确数 / 总样本数,
+            "loss": total_loss / len(val_loader),
+            "acc": 100.0 * correct / total,
         }
 
-    def 是否早停(self) -> bool:
-        """检查是否应该早停"""
-        return self.早停计数器 >= self.早停耐心值
+    def should_stop_early(self) -> bool:
+        """检查是否应该早停（连续多轮验证损失无改善）。"""
+        return self.early_stopping_counter >= self.early_stopping_patience
 
-    def 恢复最佳模型(self) -> None:
-        """恢复到验证集上表现最好的模型"""
-        if self.最佳模型状态 is not None:
-            self.模型.load_state_dict(self.最佳模型状态)
-            print(f"  已恢复最佳模型 (val_loss={self.最佳验证损失:.4f})")
+    def restore_best_model(self) -> None:
+        """从 best_model_state 恢复模型权重到最优状态。"""
+        if self.best_model_state is not None:
+            self.model.load_state_dict(self.best_model_state)
+            print(f"  已恢复最佳模型 (val_loss={self.best_val_loss:.4f})")
 
-    def 保存训练历史(self, 保存路径: str) -> None:
-        """保存训练历史到文件"""
-        with open(保存路径, "w") as f:
-            json.dump(self.训练历史, f, indent=2)
+    def save_training_history(self, save_path: str) -> None:
+        """将训练历史字典保存为 JSON 文件。"""
+        with open(save_path, "w", encoding="utf-8") as f:
+            json.dump(self.training_history, f, indent=2, ensure_ascii=False)
 
 
 # =============================================================================
 # 评估函数
 # =============================================================================
-def 评估模型(
-    model: nn.Module,  # 训练好的模型
-    test_loader: DataLoader,  # 测试数据迭代器
-    device: torch.device,  # 训练设备
-    class_names: List[str] = None,  # 类别名称列表
+
+def evaluate_model(
+    model: nn.Module,
+    test_loader: DataLoader,
+    device: torch.device,
+    class_names: Optional[List[str]] = None,
 ) -> Tuple[Dict[str, float], np.ndarray, np.ndarray, np.ndarray]:
     """
-    在测试集上评估模型
+    在测试集上评估模型，计算 Accuracy、Precision、Recall、F1-Score。
 
     Args:
-        model: 训练好的模型
+        model: 训练好的 PyTorch 模型
         test_loader: 测试数据迭代器
         device: 训练设备
-        class_names: 类别名称列表
+        class_names: 类别名称列表，默认使用 ["Normal", "Inner_Race", "Outer_Race", "Ball"]
 
     Returns:
         (指标字典, 混淆矩阵, 预测标签数组, 真实标签数组)
     """
     if class_names is None:
-        class_names = ["Normal", "Inner_Race", "Outer_Race", "Ball"]
+        class_names = list(CLASS_NAMES.values())
 
     model.eval()
-    所有真实标签 = []
-    所有预测标签 = []
-    所有预测概率 = []
+    all_true_labels: List[int] = []
+    all_pred_labels: List[int] = []
+    all_pred_probs: List[np.ndarray] = []
 
     with torch.no_grad():
-        for 数据, 标签 in test_loader:
-            数据 = 数据.to(device)
-            标签 = 标签.to(device)
+        for data, labels in test_loader:
+            data = data.to(device)
+            labels = labels.to(device)
 
-            输出 = model.前向传播(数据)
-            预测 = 输出.argmax(dim=1)
-            概率 = torch.softmax(输出, dim=1)
+            outputs = model.forward(data)
+            preds = outputs.argmax(dim=1)
+            probs = torch.softmax(outputs, dim=1)
 
-            所有真实标签.extend(标签.cpu().numpy())
-            所有预测标签.extend(预测.cpu().numpy())
-            所有预测概率.extend(概率.cpu().numpy())
+            all_true_labels.extend(labels.cpu().numpy().tolist())
+            all_pred_labels.extend(preds.cpu().numpy().tolist())
+            all_pred_probs.extend(probs.cpu().numpy())
 
-    所有真实标签 = np.array(所有真实标签)
-    所有预测标签 = np.array(所有预测标签)
+    all_true_labels = np.array(all_true_labels)
+    all_pred_labels = np.array(all_pred_labels)
 
-    # 计算指标
-    准确率 = 100.0 * accuracy_score(所有真实标签, 所有预测标签)
-    精确率 = 100.0 * precision_score(
-        所有真实标签, 所有预测标签, average="weighted", zero_division=0
+    # ---- 计算评估指标 ----
+    accuracy = 100.0 * accuracy_score(all_true_labels, all_pred_labels)
+    precision = 100.0 * precision_score(
+        all_true_labels, all_pred_labels, average="weighted", zero_division=0
     )
-    召回率 = 100.0 * recall_score(
-        所有真实标签, 所有预测标签, average="weighted", zero_division=0
+    recall = 100.0 * recall_score(
+        all_true_labels, all_pred_labels, average="weighted", zero_division=0
     )
-    f1分数 = 100.0 * f1_score(
-        所有真实标签, 所有预测标签, average="weighted", zero_division=0
+    f1 = 100.0 * f1_score(
+        all_true_labels, all_pred_labels, average="weighted", zero_division=0
     )
 
-    指标 = {
-        "accuracy": 准确率,
-        "precision": 精确率,
-        "recall": 召回率,
-        "f1_score": f1分数,
+    metrics = {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1_score": f1,
     }
 
-    # 混淆矩阵
-    混淆矩阵 = confusion_matrix(所有真实标签, 所有预测标签)
+    # ---- 混淆矩阵 ----
+    cm = confusion_matrix(all_true_labels, all_pred_labels)
 
-    return 指标, 混淆矩阵, 所有预测标签, 所有真实标签
+    return metrics, cm, all_pred_labels, all_true_labels
 
 
-def 打印分类报告(
-    y_true: np.ndarray,  # 真实标签数组
-    y_pred: np.ndarray,  # 预测标签数组
-    class_names: List[str],  # 类别名称列表
+def print_classification_report(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    class_names: List[str],
 ) -> str:
     """
-    打印并返回分类报告
+    打印 sklearn 的分类报告（Precision/Recall/F1 per class）。
 
     Args:
         y_true: 真实标签数组
@@ -425,7 +430,7 @@ def 打印分类报告(
     Returns:
         分类报告字符串
     """
-    报告 = classification_report(
+    report = classification_report(
         y_true,
         y_pred,
         target_names=class_names,
@@ -434,20 +439,21 @@ def 打印分类报告(
     print("\n" + "=" * 60)
     print("分类报告 (Classification Report)")
     print("=" * 60)
-    print(报告)
-    return 报告
+    print(report)
+    return report
 
 
 # =============================================================================
 # 可视化函数
 # =============================================================================
-def 绘制训练曲线(
-    history: Dict[str, List[float]],  # 训练历史字典
-    save_path: str,  # 图片保存路径
-    show_val: bool = True,  # 是否显示验证曲线
+
+def plot_training_curve(
+    history: Dict[str, List[float]],
+    save_path: str,
+    show_val: bool = True,
 ) -> None:
     """
-    绘制训练曲线
+    绘制训练曲线（Loss 和 Accuracy 随 Epoch 变化）。
 
     Args:
         history: 训练历史字典
@@ -458,7 +464,7 @@ def 绘制训练曲线(
 
     epochs = range(1, len(history["train_loss"]) + 1)
 
-    # 损失曲线
+    # 左图：损失曲线
     axes[0].plot(epochs, history["train_loss"], "b-", label="Train Loss", linewidth=2)
     if show_val and "val_loss" in history and history["val_loss"]:
         axes[0].plot(epochs, history["val_loss"], "r--", label="Val Loss", linewidth=2)
@@ -468,7 +474,7 @@ def 绘制训练曲线(
     axes[0].legend(fontsize=11)
     axes[0].grid(True, alpha=0.3)
 
-    # 准确率曲线
+    # 右图：准确率曲线
     axes[1].plot(epochs, history["train_acc"], "b-", label="Train Acc", linewidth=2)
     if show_val and "val_acc" in history and history["val_acc"]:
         axes[1].plot(epochs, history["val_acc"], "r--", label="Val Acc", linewidth=2)
@@ -484,32 +490,32 @@ def 绘制训练曲线(
     print(f"训练曲线已保存: {save_path}")
 
 
-def 绘制混淆矩阵(
-    cm: np.ndarray,  # 混淆矩阵数组
-    class_names: List[str],  # 类别名称列表
-    save_path: str,  # 图片保存路径
-    normalize: bool = False,  # 是否归一化
+def plot_confusion_matrix(
+    cm: np.ndarray,
+    class_names: List[str],
+    save_path: str,
+    normalize: bool = False,
 ) -> None:
     """
-    绘制混淆矩阵
+    绘制混淆矩阵热力图。
 
     Args:
         cm: 混淆矩阵数组
         class_names: 类别名称列表
         save_path: 图片保存路径
-        normalize: 是否归一化
+        normalize: 是否归一化（显示百分比而非数量）
     """
     if normalize:
         cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
-        格式字符串 = ".2%"
+        fmt_str = ".2%"
     else:
-        格式字符串 = "d"
+        fmt_str = "d"
 
     plt.figure(figsize=(10, 8))
     sns.heatmap(
         cm,
         annot=True,
-        fmt=格式字符串,
+        fmt=fmt_str,
         cmap="Blues",
         xticklabels=class_names,
         yticklabels=class_names,
@@ -524,12 +530,12 @@ def 绘制混淆矩阵(
     print(f"混淆矩阵已保存: {save_path}")
 
 
-def 绘制学习率曲线(
-    history: Dict[str, List[float]],  # 训练历史字典
-    save_path: str,  # 图片保存路径
+def plot_learning_rate_curve(
+    history: Dict[str, List[float]],
+    save_path: str,
 ) -> None:
     """
-    绘制学习率变化曲线
+    绘制学习率变化曲线。
 
     Args:
         history: 训练历史字典
@@ -551,57 +557,58 @@ def 绘制学习率曲线(
 # =============================================================================
 # 主训练函数
 # =============================================================================
-def 主训练函数(
-    data_path: str = None,  # 数据目录路径
-    sample_length: int = 1024,  # 每个样本的序列长度
-    stride: int = 512,  # 滑动窗口步长
-    normalize: str = "minmax",  # 归一化方法: "minmax", "zscore", "none"
-    train_ratio: float = 0.7,  # 训练集比例
-    batch_size: int = 32,  # 批次大小
-    epochs: int = 50,  # 训练轮数
-    learning_rate: float = 0.001,  # 学习率
-    weight_decay: float = 1e-4,  # L2 正则化系数
-    optimizer_type: str = "adam",  # 优化器类型: "adam", "sgd", "adamw"
-    scheduler_type: str = "step",  # 学习率调度器: "step", "cosine", "none"
-    scheduler_step: int = 20,  # 学习率下降间隔
-    scheduler_gamma: float = 0.5,  # 学习率下降倍数
-    early_stopping_patience: int = 15,  # 早停容忍轮数
-    early_stopping_min_delta: float = 0.001,  # 被认为有提升的最小变化量
-    grad_clip_threshold: float = None,  # 梯度裁剪阈值，None表示不裁剪
-    random_seed: int = 42,  # 随机种子
-    log_interval: int = 10,  # 日志打印间隔
-    model_save_path: str = None,  # 模型保存路径
-    use_gpu: bool = True,  # 是否使用 GPU
+
+def train(
+    data_path: Optional[str] = None,
+    sample_length: int = 1024,
+    stride: int = 512,
+    normalize: str = "minmax",
+    train_ratio: float = 0.7,
+    batch_size: int = 32,
+    epochs: int = 50,
+    learning_rate: float = 0.001,
+    weight_decay: float = 1e-4,
+    optimizer_type: str = "adam",
+    scheduler_type: str = "step",
+    scheduler_step: int = 20,
+    scheduler_gamma: float = 0.5,
+    early_stopping_patience: int = 15,
+    early_stopping_min_delta: float = 0.001,
+    grad_clip_threshold: Optional[float] = None,
+    random_seed: int = 42,
+    log_interval: int = 10,
+    model_save_path: Optional[str] = None,
+    use_gpu: bool = True,
 ) -> Tuple[nn.Module, Dict[str, float], Dict]:
     """
-    主训练函数
+    主训练函数：加载数据 → 构建模型 → 训练 → 评估 → 保存结果。
 
     Args:
-        data_path: 数据目录路径
-        sample_length: 每个样本的序列长度
-        stride: 滑动窗口步长
-        normalize: 归一化方法
-        train_ratio: 训练集比例
-        batch_size: 批次大小
-        epochs: 训练轮数
-        learning_rate: 学习率
-        weight_decay: L2 正则化系数
-        optimizer_type: 优化器类型
-        scheduler_type: 学习率调度器类型
-        scheduler_step: 学习率下降间隔
-        scheduler_gamma: 学习率下降倍数
-        early_stopping_patience: 早停容忍轮数
+        data_path: 数据目录路径，默认使用 p02_data/raw/cwru/
+        sample_length: 每个样本的序列长度（点数），默认 1024
+        stride: 滑动窗口步长，默认 512（50% 重叠）
+        normalize: 归一化方法，"minmax" | "zscore" | "none"
+        train_ratio: 训练集比例，默认 0.7（70% 训练，30% 测试）
+        batch_size: 每批次样本数，默认 32
+        epochs: 训练轮数，默认 50
+        learning_rate: 初始学习率，默认 0.001
+        weight_decay: L2 正则化系数，默认 1e-4
+        optimizer_type: 优化器类型，默认 "adam"
+        scheduler_type: 学习率调度器类型，默认 "step"
+        scheduler_step: 学习率下降间隔，默认 20
+        scheduler_gamma: 学习率下降倍数，默认 0.5
+        early_stopping_patience: 早停容忍轮数，默认 15
         early_stopping_min_delta: 被认为有提升的最小变化量
         grad_clip_threshold: 梯度裁剪阈值
-        random_seed: 随机种子
-        log_interval: 日志打印间隔
-        model_save_path: 模型保存路径
-        use_gpu: 是否使用 GPU
+        random_seed: 随机种子，默认 42
+        log_interval: 日志打印间隔（每多少批次打印一次）
+        model_save_path: 模型权重保存路径
+        use_gpu: 是否优先使用 GPU
 
     Returns:
         (训练好的模型, 测试指标字典, 训练历史字典)
     """
-    # ===== 固定随机种子 =====
+    # ===== 固定随机种子（确保结果可复现）=====
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     if torch.cuda.is_available():
@@ -611,40 +618,40 @@ def 主训练函数(
 
     # ===== 设备配置 =====
     if use_gpu and torch.cuda.is_available():
-        设备 = torch.device("cuda:0")
+        device = torch.device("cuda:0")
         print(f"使用 GPU: {torch.cuda.get_device_name(0)}")
     else:
-        设备 = torch.device("cpu")
+        device = torch.device("cpu")
         print("使用 CPU")
 
-    # ===== 加载数据 =====
+    # ===== 加载数据集（真实 CWRU .mat 文件）=====
     print("\n" + "=" * 60)
     print("加载数据集")
     print("=" * 60)
 
-    数据集 = CWRUDataset(
+    dataset = CWRUDataset(
         data_dir=data_path,
         sample_length=sample_length,
         stride=stride,
         normalize=normalize,
     )
 
-    打印数据统计(数据集, "CWRU 轴承数据集")
+    print_dataset_statistics(dataset, "CWRU 轴承数据集")
 
-    # 划分数据集
-    训练集, 测试集 = 划分训练测试集(
-        数据集,
+    # 划分训练集 / 测试集
+    train_set, test_set = split_train_test(
+        dataset,
         test_ratio=1 - train_ratio,
         random_seed=random_seed,
         stratify=True,
     )
 
-    print(f"训练集: {len(训练集)} 样本")
-    print(f"测试集: {len(测试集)} 样本")
+    print(f"训练集: {len(train_set)} 样本")
+    print(f"测试集: {len(test_set)} 样本")
 
-    # 创建数据加载器
-    训练数据加载器 = DataLoader(
-        训练集,
+    # 创建 DataLoader
+    train_loader = DataLoader(
+        train_set,
         batch_size=batch_size,
         shuffle=True,
         num_workers=0,
@@ -652,12 +659,13 @@ def 主训练函数(
         drop_last=True,
     )
 
-    测试数据加载器 = DataLoader(
-        测试集,
+    test_loader = DataLoader(
+        test_set,
         batch_size=batch_size,
         shuffle=False,
         num_workers=0,
         pin_memory=True,
+        drop_last=False,
     )
 
     # ===== 构建模型 =====
@@ -665,20 +673,20 @@ def 主训练函数(
     print("构建模型")
     print("=" * 60)
 
-    模型 = CNN1D(
-        输入长度=sample_length,
-        通道数=1,
-        类别数=4,
-        卷积核大小=16,
-        第一层通道=32,
-    ).to(设备)
+    model = CNN1D(
+        input_length=sample_length,
+        in_channels=1,
+        num_classes=4,
+        kernel_size=16,
+        first_channels=32,
+    ).to(device)
 
-    打印模型结构(模型, 输入长度=sample_length)
+    print_model_structure(model, input_length=sample_length)
 
     # ===== 初始化训练器 =====
-    训练器实例 = 训练器(
-        model=模型,
-        device=设备,
+    trainer = Trainer(
+        model=model,
+        device=device,
         learning_rate=learning_rate,
         weight_decay=weight_decay,
         optimizer_type=optimizer_type,
@@ -695,119 +703,119 @@ def 主训练函数(
     print("开始训练")
     print("=" * 60)
 
-    开始时间 = datetime.now()
-    最好验证准确率 = 0.0
+    start_time = datetime.now()
+    best_train_acc = 0.0
 
-    for 轮次 in range(1, epochs + 1):
-        print(f"\nEpoch {轮次}/{epochs}")
+    for epoch in range(1, epochs + 1):
+        print(f"\nEpoch {epoch}/{epochs}")
 
-        指标 = 训练器实例.训练轮次(
-            train_loader=训练数据加载器,
-            val_loader=None,  # 本 baseline 简化版不使用验证集
-            epoch=轮次,
+        metrics = trainer.train_epoch(
+            train_loader=train_loader,
+            val_loader=None,  # 本 baseline 不使用验证集
+            epoch=epoch,
             log_interval=log_interval,
         )
 
         # 打印本轮指标
         print(
-            f"  Train Loss: {指标['train_loss']:.4f} | "
-            f"Train Acc: {指标['train_acc']:.2f}% | "
-            f"LR: {指标['learning_rate']:.6f}"
+            f"  Train Loss: {metrics['train_loss']:.4f} | "
+            f"Train Acc: {metrics['train_acc']:.2f}% | "
+            f"LR: {metrics['learning_rate']:.6f}"
         )
 
-        # 保存最佳模型（基于训练准确率，因为没有验证集）
-        if 指标['train_acc'] > 最好验证准确率:
-            最好验证准确率 = 指标['train_acc']
+        # 保存最佳模型（基于训练准确率）
+        if metrics['train_acc'] > best_train_acc:
+            best_train_acc = metrics['train_acc']
             if model_save_path is not None:
-                torch.save(模型.state_dict(), model_save_path)
+                torch.save(model.state_dict(), model_save_path)
                 print(f"  ★ 模型已保存到: {model_save_path}")
 
         # 早停检查
-        if 训练器实例.是否早停():
-            print(f"\n早停触发: 连续 {训练器实例.早停计数器} 轮验证损失无改善")
+        if trainer.should_stop_early():
+            print(f"\n早停触发: 连续 {trainer.early_stopping_counter} 轮验证损失无改善")
             break
 
-    训练时间 = (datetime.now() - 开始时间).total_seconds()
+    training_time = (datetime.now() - start_time).total_seconds()
 
     # ===== 测试评估 =====
     print("\n" + "=" * 60)
     print("测试评估")
     print("=" * 60)
 
-    # 加载最佳模型
+    # 加载最佳模型权重
     if model_save_path is not None and os.path.exists(model_save_path):
-        模型.load_state_dict(torch.load(model_save_path, map_location=设备))
+        model.load_state_dict(torch.load(model_save_path, map_location=device))
         print(f"已加载最佳模型: {model_save_path}")
 
-    测试指标, 混淆矩阵, 预测标签, 真实标签 = 评估模型(
-        model=模型,
-        test_loader=测试数据加载器,
-        device=设备,
+    test_metrics, cm, pred_labels, true_labels = evaluate_model(
+        model=model,
+        test_loader=test_loader,
+        device=device,
         class_names=list(CLASS_NAMES.values()),
     )
 
-    print(f"\n测试集准确率: {测试指标['accuracy']:.2f}%")
-    print(f"精确率 (Precision): {测试指标['precision']:.2f}%")
-    print(f"召回率 (Recall): {测试指标['recall']:.2f}%")
-    print(f"F1 分数: {测试指标['f1_score']:.2f}%")
+    print(f"\n测试集准确率 (Accuracy): {test_metrics['accuracy']:.2f}%")
+    print(f"精确率 (Precision): {test_metrics['precision']:.2f}%")
+    print(f"召回率 (Recall): {test_metrics['recall']:.2f}%")
+    print(f"F1 分数: {test_metrics['f1_score']:.2f}%")
 
-    # 打印分类报告（使用测试集的真实标签和预测标签）
-    报告 = 打印分类报告(
-        y_true=真实标签,
-        y_pred=预测标签,
+    # 打印详细分类报告
+    report = print_classification_report(
+        y_true=true_labels,
+        y_pred=pred_labels,
         class_names=list(CLASS_NAMES.values()),
     )
 
-    # ===== 保存结果 =====
+    # ===== 保存结果 ======
     print("\n" + "=" * 60)
     print("保存结果")
     print("=" * 60)
 
-    时间戳 = datetime.now().strftime("%Y%m%d_%H%M%S")
-    实验名称 = f"cnn1d_baseline_{时间戳}"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    experiment_name = f"cnn1d_baseline_{timestamp}"
 
     # 训练曲线
-    训练曲线路径 = os.path.join(FIGURES_DIR, f"{实验名称}_training_curve.png")
-    绘制训练曲线(训练器实例.训练历史, 训练曲线路径, show_val=False)
+    training_curve_path = os.path.join(FIGURES_DIR, f"{experiment_name}_training_curve.png")
+    plot_training_curve(trainer.training_history, training_curve_path, show_val=False)
 
     # 混淆矩阵
-    混淆矩阵路径 = os.path.join(FIGURES_DIR, f"{实验名称}_confusion_matrix.png")
-    绘制混淆矩阵(混淆矩阵, list(CLASS_NAMES.values()), 混淆矩阵路径)
+    cm_path = os.path.join(FIGURES_DIR, f"{experiment_name}_confusion_matrix.png")
+    plot_confusion_matrix(cm, list(CLASS_NAMES.values()), cm_path)
 
     # 学习率曲线
-    学习率曲线路径 = os.path.join(FIGURES_DIR, f"{实验名称}_lr_schedule.png")
-    绘制学习率曲线(训练器实例.训练历史, 学习率曲线路径)
+    lr_curve_path = os.path.join(FIGURES_DIR, f"{experiment_name}_lr_schedule.png")
+    plot_learning_rate_curve(trainer.training_history, lr_curve_path)
 
-    # 保存训练历史
-    历史路径 = os.path.join(RESULTS_DIR, f"{实验名称}_history.json")
-    训练器实例.保存训练历史(历史路径)
+    # 保存训练历史 JSON
+    history_path = os.path.join(RESULTS_DIR, f"{experiment_name}_history.json")
+    trainer.save_training_history(history_path)
 
-    # 保存指标
-    指标.update({
+    # 保存测试指标 JSON
+    test_metrics.update({
         "model_name": "1D-CNN-Benchmark",
-        "test_confusion_matrix": 混淆矩阵.tolist(),
-        "training_time_seconds": 训练时间,
-        "best_train_acc": 最好验证准确率,
-        "epochs_trained": len(训练器实例.训练历史["train_loss"]),
+        "test_confusion_matrix": cm.tolist(),
+        "training_time_seconds": training_time,
+        "best_train_acc": best_train_acc,
+        "epochs_trained": len(trainer.training_history["train_loss"]),
     })
 
-    指标路径 = os.path.join(RESULTS_DIR, f"{实验名称}_metrics.json")
-    with open(指标路径, "w") as f:
-        json.dump(指标, f, indent=2)
+    metrics_path = os.path.join(RESULTS_DIR, f"{experiment_name}_metrics.json")
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(test_metrics, f, indent=2, ensure_ascii=False)
 
     print(f"\n{'='*60}")
-    print(f"训练完成!")
-    print(f"总训练时间: {训练时间:.2f} 秒")
-    print(f"训练轮数: {len(训练器实例.训练历史['train_loss'])}")
+    print("训练完成!")
+    print(f"总训练时间: {training_time:.2f} 秒")
+    print(f"训练轮数: {len(trainer.training_history['train_loss'])}")
     print(f"模型保存: {model_save_path}")
     print(f"结果保存目录: {RESULTS_DIR}")
     print(f"{'='*60}\n")
 
-    return 模型, 测试指标, 训练器实例.训练历史
+    return model, test_metrics, trainer.training_history
 
 
-# English alias
-main = 主训练函数
+# 别名（兼容旧代码）
+main_training_function = train
 
 
 # =============================================================================
@@ -818,7 +826,7 @@ if __name__ == "__main__":
         description="CWRU 轴承故障诊断 1D-CNN Baseline 训练脚本"
     )
     parser.add_argument("--data_dir", type=str, default=None, help="数据目录路径")
-    parser.add_argument("--sample_length", type=int, default=1024, help="样本长度")
+    parser.add_argument("--sample_length", type=int, default=1024, help="样本长度（点数）")
     parser.add_argument("--stride", type=int, default=512, help="滑动窗口步长")
     parser.add_argument("--normalize", type=str, default="minmax", help="归一化方法")
     parser.add_argument("--train_ratio", type=float, default=0.7, help="训练集比例")
@@ -842,7 +850,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # 运行训练
-    主训练函数(
+    train(
         data_path=args.data_dir,
         sample_length=args.sample_length,
         stride=args.stride,

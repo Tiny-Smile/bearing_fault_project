@@ -31,7 +31,7 @@ _current_file = os.path.abspath(__file__)
 _current_dir = os.path.dirname(_current_file)
 sys.path.insert(0, _current_dir)
 
-from p03_code.p03_train.train_cnn1d import main as train_main
+from p03_code.p03_train.train_cnn1d import main_training_function as train_main
 from p03_code.p04_test.eval_cnn1d import quick_eval
 
 

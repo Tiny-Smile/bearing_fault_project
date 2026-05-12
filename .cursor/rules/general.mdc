@@ -1,5 +1,5 @@
 ---
-description: 项目通用规范 - 结构、命名、路径管理
+description: 项目通用规范 - 结构、命名（英文）、路径管理、CWRU数据集
 alwaysApply: true
 ---
 
@@ -109,3 +109,56 @@ save_path = "E:\\项目\\06_results\\test.png"  # ❌ 硬编码绝对路径
 - ❌ 禁止提交有 print 调试信息的代码
 - ❌ 禁止提交密码或密钥
 - ❌ 禁止输出 md、txt 结果文件到代码目录
+
+## CWRU 数据集目录结构规范
+
+### 数据集下载地址
+CWRU 轴承数据集（Case Western Reserve University）：
+https://engineering.case.edu/bearingdatacenter
+
+### 数据集目录结构
+
+下载并解压 CWRU 数据集到 `p02_data/raw/cwru/` 后，目录结构应为：
+
+```
+p02_data/raw/cwru/
+├── Normal Baseline Data/           # 正常数据（标签 0）
+│   ├── 100_3.mat
+│   ├── 97_0.mat
+│   └── ...
+├── 12k Drive End Bearing Fault Data/  # 驱动端故障数据
+│   ├── 0.007 inches/
+│   │   ├── Ball/*.mat              # 滚动体故障 0.007 英寸（标签 3）
+│   │   ├── Inner Race/*.mat        # 内圈故障 0.007 英寸（标签 1）
+│   │   └── Outer Race/*.mat        # 外圈故障 0.007 英寸（标签 2）
+│   ├── 0.014 inches/
+│   └── 0.021 inches/
+├── 48k Drive End Bearing Fault Data/  # 48kHz 驱动端
+└── 12k Fan End Bearing Fault Data/    # 风扇端故障数据
+    ├── 0.007 inches/
+    └── ...
+```
+
+### 故障类型与标签映射
+
+| 标签 | 类别名 | 目录关键词 |
+|------|--------|-----------|
+| 0 | Normal | `normal` |
+| 1 | Inner_Race | `inner race`, `inner_race`, `inner` |
+| 2 | Outer_Race | `outer race`, `outer_race`, `outer` |
+| 3 | Ball | `ball` |
+
+### 代码中的目录扫描逻辑
+
+数据加载器应通过 `_detect_label_from_path()` 自动识别目录名对应的标签，
+无需手动指定文件列表。扫描优先级：Normal → Ball → Inner Race → Outer Race。
+
+### 信号参数
+
+| 参数 | 值 |
+|------|-----|
+| 驱动端采样频率 | 12,000 Hz |
+| 风扇端采样频率 | 48,000 Hz |
+| 默认样本长度 | 1024 点（~85ms @12kHz） |
+| 默认滑动步长 | 512 点（50% 重叠） |
+| 默认归一化 | Min-Max → [0, 1] |
